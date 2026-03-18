@@ -20,5 +20,11 @@ dist-ssr
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
+*.sln9
 *.sw?
+
+# Electron compiled output
+dist-electron/
+
+# Vite build output
+dist/
