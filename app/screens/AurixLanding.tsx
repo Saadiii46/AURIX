@@ -1,3 +1,5 @@
+"use client";
+
 import { useState } from "react";
 import TitleBar from "../components/TitleBar";
 
@@ -131,43 +133,6 @@ export default function AurixLanding() {
             "radial-gradient(ellipse at center, #0a2e2e 0%, #061a1a 50%, #030f0f 100%)",
         }}
       >
-        {/* Status Bar icons — top right */}
-        <div
-          style={{
-            position: "absolute",
-            top: 44,
-            right: 20,
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#00d4d4"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01" />
-          </svg>
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#00d4d4"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          </svg>
-        </div>
-
         {/* Logo + Rings */}
         <div
           style={{

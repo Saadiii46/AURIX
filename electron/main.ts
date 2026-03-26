@@ -15,11 +15,11 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
 
-    // ─── Frameless native window (Discord-style) ───
+    // Frameless native window (Discord-style)
     frame: false,
     titleBarStyle: "hidden", // macOS: keeps traffic-light buttons
     transparent: false,
-    // Windows 11 acrylic — remove if targeting older Windows
+    // Windows 11 acrylic remove if targeting older Windows
     // backgroundMaterial: "acrylic",
 
     webPreferences: {
@@ -32,7 +32,7 @@ function createWindow() {
     icon: path.join(__dirname, "../public/vite.svg"),
   });
 
-  // ─── Content Security Policy ───
+  // Content Security Policy
   mainWindow.webContents.session.webRequest.onHeadersReceived(
     (details, callback) => {
       callback({
@@ -53,7 +53,7 @@ function createWindow() {
     },
   );
 
-  // ─── Permission handler (microphone only) ────────────────────────────
+  // Permission handler (microphone only)
   //   mainWindow.webContents.session.setPermissionRequestHandler(
   //     (webContents, permission, callback) => {
   //       console.log("Permission requested:", permission);
@@ -61,10 +61,10 @@ function createWindow() {
   //     },
   //   );
 
-  // ─── Disable right-click context menu ────────────────────────────────
+  // Disable right-click context menu
   mainWindow.webContents.on("context-menu", (e) => e.preventDefault());
 
-  // ─── Disable zoom (browser-feel) ─────────────────────────────────────
+  // Disable zoom (browser-feel)
   mainWindow.webContents.on("before-input-event", (event, input) => {
     if (
       (input.control || input.meta) &&
@@ -74,27 +74,19 @@ function createWindow() {
     }
   });
 
-  // ─── Disable back/forward navigation ─────────────────────────────────
+  // Disable back/forward navigation
   mainWindow.webContents.on("will-navigate", (e) => e.preventDefault());
 
-  // ─── Load app ────────────────────────────────────────────────────────
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-    mainWindow.webContents.openDevTools({ mode: "detach" }); // detached so it doesn't eat window space
-
-    mainWindow.webContents.on("console-message", (event, level, message) => {
-      if (
-        message.includes("React DevTools") ||
-        message.includes("react-devtools")
-      ) {
-        event.preventDefault();
-      }
-    });
+  // Load app
+  // Load app — replace the existing if/else block
+  if (process.env.NEXT_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.NEXT_DEV_SERVER_URL);
+    mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
+    mainWindow.loadFile(path.join(__dirname, "../dist-next/index.html"));
   }
 
-  // ─── Minimize to tray on close ───────────────────────────────────────
+  // Minimize to tray on close
   mainWindow.on("close", (e) => {
     e.preventDefault();
     mainWindow?.hide();
@@ -105,7 +97,7 @@ function createWindow() {
   });
 }
 
-// ─── IPC: Window controls from renderer ────────────────────────────────
+// IPC: Window controls from renderer
 ipcMain.on("window-minimize", () => mainWindow?.minimize());
 ipcMain.on("window-maximize", () => {
   if (mainWindow?.isMaximized()) {
@@ -116,7 +108,7 @@ ipcMain.on("window-maximize", () => {
 });
 ipcMain.on("window-close", () => mainWindow?.hide());
 
-// ─── System tray ───────────────────────────────────────────────────────
+// System tray
 function createTray() {
   const icon = nativeImage.createFromPath(
     path.join(__dirname, "../public/vite.svg"),
@@ -152,7 +144,7 @@ function createTray() {
   });
 }
 
-// ─── App lifecycle ─────────────────────────────────────────────────────
+// App lifecycle
 app.whenReady().then(() => {
   createWindow();
   createTray();

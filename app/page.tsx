@@ -1,12 +1,10 @@
 import "./App.css";
 import AurixLanding from "./screens/AurixLanding";
 
-function App() {
+export default function Home() {
   return (
     <>
       <AurixLanding />
     </>
   );
 }
-
-export default App;
