@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import TitleBar from "../components/TitleBar";
+import Link from "next/link";
 
 const GearIcon = () => (
   <svg
@@ -42,81 +43,8 @@ export default function AurixLanding() {
 
   return (
     <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
-
-        /* Reset for Electron — no scrollbars, no text cursor, no selection */
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-          scrollbar-width: none;
-          -webkit-user-select: none;
-          user-select: none;
-          cursor: default !important;
-        }
-        *::-webkit-scrollbar { display: none; }
-
-        /* Allow text cursor and selection only in inputs */
-        input, textarea {
-          -webkit-user-select: text;
-          user-select: text;
-          cursor: text !important;
-        }
-
-        /* Allow pointer cursor on buttons and links */
-        button, a, [role="button"] {
-          cursor: pointer !important;
-        }
-
-        html, body, #root {
-          width: 100%;
-          height: 100%;
-          overflow: hidden;
-          background: #030f0f;
-        }
-
-        @keyframes core-pulse {
-          0%, 100% { box-shadow: 0 0 40px 12px rgba(0,210,210,0.35), 0 0 80px 20px rgba(0,180,180,0.15); }
-          50%       { box-shadow: 0 0 55px 18px rgba(0,220,220,0.5), 0 0 100px 30px rgba(0,190,190,0.25); }
-        }
-        .core-glow { animation: core-pulse 3s ease-in-out infinite; }
-
-        @keyframes gear-orbit {
-          from { transform: rotate(315deg) translateX(128px) rotate(-315deg); }
-          to   { transform: rotate(675deg) translateX(128px) rotate(-675deg); }
-        }
-        .gear-badge {
-          position: absolute;
-          top: calc(50% - 14px);
-          left: calc(50% - 14px);
-          width: 28px;
-          height: 28px;
-          animation: gear-orbit 9s linear infinite;
-        }
-
-        @keyframes db-orbit {
-          from { transform: rotate(225deg) translateX(96px) rotate(-225deg); }
-          to   { transform: rotate(-135deg) translateX(96px) rotate(135deg); }
-        }
-        .db-badge {
-          position: absolute;
-          top: calc(50% - 14px);
-          left: calc(50% - 14px);
-          width: 28px;
-          height: 28px;
-          animation: db-orbit 7s linear infinite;
-        }
-
-        @keyframes ring-spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
-        .ring-spin { animation: ring-spin 20s linear infinite; }
-      `}</style>
-
       {/* Native-style custom titlebar */}
-      <TitleBar />
+      {/* <TitleBar /> */}
 
       {/* Main content — padded below titlebar */}
       <div
@@ -290,7 +218,8 @@ export default function AurixLanding() {
             width: 320,
           }}
         >
-          <button
+          <Link
+            href="/screens/sign-in"
             onMouseEnter={() => setSignInHover(true)}
             onMouseLeave={() => setSignInHover(false)}
             style={{
@@ -328,7 +257,7 @@ export default function AurixLanding() {
               <line x1="15" y1="12" x2="3" y2="12" />
             </svg>
             SIGN IN
-          </button>
+          </Link>
 
           <button
             onMouseEnter={() => setSignUpHover(true)}

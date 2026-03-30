@@ -1,9 +1,11 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
+import serve from "electron-serve";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const loadURL = serve({ directory: path.join(__dirname, "../dist-next") });
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -39,7 +41,7 @@ function createWindow() {
         responseHeaders: {
           ...details.responseHeaders,
           "Content-Security-Policy": [
-            "default-src 'self'; " +
+            "default-src 'self' app:; " +
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
               "font-src 'self' https://fonts.gstatic.com; " +
@@ -83,7 +85,7 @@ function createWindow() {
     mainWindow.loadURL(process.env.NEXT_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist-next/index.html"));
+    loadURL(mainWindow);
   }
 
   // Minimize to tray on close

@@ -1,57 +1,124 @@
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap");
 @import "tailwindcss";
 
+@theme {
+  /* Register animations as utility variables */
+  --animate-core-pulse: core-pulse 3s ease-in-out infinite;
+  --animate-gear-orbit: gear-orbit 9s linear infinite;
+  --animate-db-orbit: db-orbit 7s linear infinite;
+  --animate-ring-spin: ring-spin 20s linear infinite;
+
+  /* Keyframe definitions */
+  @keyframes core-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 40px 12px rgba(0, 210, 210, 0.35),
+        0 0 80px 20px rgba(0, 180, 180, 0.15);
+    }
+    50% {
+      box-shadow:
+        0 0 55px 18px rgba(0, 220, 220, 0.5),
+        0 0 100px 30px rgba(0, 190, 190, 0.25);
+    }
+  }
+
+  @keyframes gear-orbit {
+    from {
+      transform: rotate(315deg) translateX(128px) rotate(-315deg);
+    }
+    to {
+      transform: rotate(675deg) translateX(128px) rotate(-675deg);
+    }
+  }
+
+  @keyframes db-orbit {
+    from {
+      transform: rotate(225deg) translateX(96px) rotate(-225deg);
+    }
+    to {
+      transform: rotate(-135deg) translateX(96px) rotate(135deg);
+    }
+  }
+
+  @keyframes ring-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
 /* ─── Global Electron native reset ─────────────────────────────── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    scrollbar-width: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+  }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+  *::-webkit-scrollbar {
+    display: none;
+  }
 
-  /* Hide all scrollbars — native apps don't show them */
-  scrollbar-width: none;
+  input,
+  textarea,
+  [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: text;
+  }
 
-  /* Prevent text selection everywhere except inputs */
-  -webkit-user-select: none;
-  user-select: none;
+  button,
+  a,
+  [role="button"],
+  [tabindex]:not([tabindex="-1"]) {
+    cursor: pointer;
+  }
 
-  /* No browser-style cursor — use default arrow */
-  cursor: default;
+  html {
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #030f0f;
+    font-family: "Orbitron", sans-serif;
+  }
 }
 
-*::-webkit-scrollbar {
-  display: none;
-}
+/* ─── Component Classes ────────────────── */
+@layer components {
+  .core-glow {
+    @apply animate-core-pulse;
+  }
 
-/* Re-enable selection and cursor for form fields */
-input,
-textarea,
-[contenteditable] {
-  -webkit-user-select: text;
-  user-select: text;
-  cursor: text;
-}
+  .gear-badge {
+    @apply absolute w-7 h-7 animate-gear-orbit;
+    top: calc(50% - 14px);
+    left: calc(50% - 14px);
+  }
 
-/* Pointer cursor only where intentional */
-button,
-a,
-[role="button"],
-[tabindex]:not([tabindex="-1"]) {
-  cursor: pointer;
-}
+  .db-badge {
+    @apply absolute w-7 h-7 animate-db-orbit;
+    top: calc(50% - 14px);
+    left: calc(50% - 14px);
+  }
 
-html {
-  /* Disable browser zoom */
-  text-size-adjust: none;
-  -webkit-text-size-adjust: none;
-}
-
-html,
-body,
-#root {
-  width: 100%;
-  height: 100%;
-  overflow: hidden; /* no scroll at root level */
-  background: #030f0f;
+  .ring-spin {
+    @apply animate-ring-spin;
+  }
 }

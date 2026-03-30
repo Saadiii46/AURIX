@@ -12,7 +12,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "electron-serve": "^3.0.1",
     "next": "16.2.1",
+    "next-electron-server": "^1.0.0",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
