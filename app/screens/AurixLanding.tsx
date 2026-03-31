@@ -259,7 +259,8 @@ export default function AurixLanding() {
             SIGN IN
           </Link>
 
-          <button
+          <Link
+            href="/screens/sign-up"
             onMouseEnter={() => setSignUpHover(true)}
             onMouseLeave={() => setSignUpHover(false)}
             style={{
@@ -297,7 +298,7 @@ export default function AurixLanding() {
               <line x1="22" y1="11" x2="16" y2="11" />
             </svg>
             SIGN UP
-          </button>
+          </Link>
         </div>
       </div>
     </>
