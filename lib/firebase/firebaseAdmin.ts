@@ -10,7 +10,9 @@ if (
   throw new Error("Firebase Admin creds are not set");
 }
 
-const privateKey = process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n");
+const privateKey = process.env.FIREBASE_PRIVATE_KEY.split(String.raw`\n`).join(
+  "\n",
+);
 
 const app =
   getApps().length == 0
