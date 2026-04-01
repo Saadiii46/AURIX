@@ -68,7 +68,7 @@ export const signInUser = async ({ email, password }: SignInUserProps) => {
     const user = userCredential.user;
     const idToken = await user.getIdToken();
 
-    const res = await fetch("/api/session", {
+    const res = await fetch("/api/session/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
