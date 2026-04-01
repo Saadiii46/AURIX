@@ -4,6 +4,7 @@ import {
   signInWithEmailAndPassword,
 } from "firebase/auth";
 import { auth } from "./firebaseClient";
+import { API_BASE_URL } from "../constants";
 
 interface SignUpUserProps {
   fullName: string;
@@ -32,7 +33,7 @@ export const signUpUser = async ({
     await sendEmailVerification(user);
     const idToken = await user.getIdToken();
 
-    await fetch("/api/auth/sign-up/", {
+    await fetch(`${API_BASE_URL}/api/auth/sign-up/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fullName, email, idToken }),
@@ -68,7 +69,7 @@ export const signInUser = async ({ email, password }: SignInUserProps) => {
     const user = userCredential.user;
     const idToken = await user.getIdToken();
 
-    const res = await fetch("/api/session/", {
+    const res = await fetch(`${API_BASE_URL}/api/session/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
