@@ -7,6 +7,8 @@ import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { ArrowRightIcon, AtIcon, EyeIcon, LockIcon } from "./Icons";
 import Link from "next/link";
 import { useState } from "react";
+import { signInUser, signUpUser } from "@/lib/firebase/users";
+import { useRouter } from "next/navigation";
 
 // ------ Declaring the type of form (eg: sign-up or sign-in) ------ //
 
@@ -24,6 +26,8 @@ const authFormSchema = (formType: FormType) => {
 };
 
 export const AuthForm = ({ type }: { type: FormType }) => {
+  const router = useRouter();
+
   const [showPassword, setShowPassword] = useState(false);
 
   const formSchema = authFormSchema(type); // Setting the type of form
@@ -37,8 +41,29 @@ export const AuthForm = ({ type }: { type: FormType }) => {
     },
   });
 
-  function onSubmit(data: z.infer<typeof formSchema>) {
-    console.log("Authenticating:", data);
+  async function onSubmit(data: z.infer<typeof formSchema>) {
+    try {
+      const user =
+        type === "sign-up"
+          ? await signUpUser({
+              fullName: data.fullName || "",
+              email: data.email,
+              password: data.password,
+            })
+          : await signInUser({
+              email: data.email,
+              password: data.password,
+            });
+
+      if (!user.success) {
+        console.log("failed:", user.error);
+        return;
+      }
+
+      router.push("/main");
+    } catch (error) {
+      console.log("Failed to sign in or create account", error);
+    }
   }
 
   return (
@@ -245,7 +270,7 @@ export const AuthForm = ({ type }: { type: FormType }) => {
             ? "DON'T HAVE AN ACCOUNT?"
             : "ALREADY HAVE AN ACCOUNT?"}{" "}
           <Link
-            href={type == "sign-in" ? "/screens/sign-up" : "/screens/sign-in"}
+            href={type == "sign-in" ? "/sign-up" : "/sign-in"}
             className="text-[#00e5ff] no-underline hover:underline"
           >
             {type == "sign-in" ? "SIGN IN" : "SIGN UP"}

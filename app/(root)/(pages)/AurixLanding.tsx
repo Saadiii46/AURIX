@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import TitleBar from "../components/TitleBar";
+import TitleBar from "../../components/TitleBar";
 import Link from "next/link";
 
 const GearIcon = () => (
@@ -219,7 +219,7 @@ export default function AurixLanding() {
           }}
         >
           <Link
-            href="/screens/sign-in"
+            href="/sign-in"
             onMouseEnter={() => setSignInHover(true)}
             onMouseLeave={() => setSignInHover(false)}
             style={{
@@ -260,7 +260,7 @@ export default function AurixLanding() {
           </Link>
 
           <Link
-            href="/screens/sign-up"
+            href="/sign-up"
             onMouseEnter={() => setSignUpHover(true)}
             onMouseLeave={() => setSignUpHover(false)}
             style={{

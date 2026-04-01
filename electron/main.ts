@@ -47,12 +47,13 @@ function createWindow() {
               "font-src 'self' https://fonts.gstatic.com; " +
               "img-src 'self' data: https:; " +
               "media-src 'self' blob: mediastream:; " +
-              "connect-src 'self' https://api.deepgram.com wss://api.deepgram.com https://api.groq.com; " +
+              // Added Firebase Auth & Database domains below
+              "connect-src 'self' https://api.deepgram.com wss://api.deepgram.com https://api.groq.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; " +
               "worker-src 'self' blob:;",
           ],
         },
       });
-    },
+    }
   );
 
   // Permission handler (microphone only)
