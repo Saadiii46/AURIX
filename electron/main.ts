@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Tray,
+  Menu,
+  nativeImage,
+  session,
+} from "electron";
 import path from "path";
 import { fileURLToPath } from "url";
 import serve from "electron-serve";
@@ -6,6 +14,11 @@ import serve from "electron-serve";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const loadURL = serve({ directory: path.join(__dirname, "../dist-next") });
+
+const IS_PROD = process.env.NODE_ENV === "production";
+const API_BASE_URL = IS_PROD
+  ? "https://aurix-api.vercel.app"
+  : "http://localhost:3000";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -47,8 +60,7 @@ function createWindow() {
               "font-src 'self' https://fonts.gstatic.com; " +
               "img-src 'self' data: https:; " +
               "media-src 'self' blob: mediastream:; " +
-              // Added Firebase Auth & Database domains below
-              "connect-src 'self' https://api.deepgram.com wss://api.deepgram.com https://api.groq.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; https://your-vercel-domain.vercel.app https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; ${API_BASE_URL} https://identitytoolkit.googleapis.com;" +
+              `connect-src 'self' ${API_BASE_URL} https://aurix-api.vercel.app https://api.deepgram.com wss://api.deepgram.com https://api.groq.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; ` +
               "worker-src 'self' blob:;",
           ],
         },
@@ -149,6 +161,14 @@ function createTray() {
 
 // App lifecycle
 app.whenReady().then(() => {
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: ["https://aurix-api.vercel.app/*"] },
+    (details, callback) => {
+      details.requestHeaders["Origin"] = "https://aurix-api.vercel.app";
+      callback({ requestHeaders: details.requestHeaders });
+    },
+  );
+
   createWindow();
   createTray();
 

@@ -1,6 +1,17 @@
 import { adminAuth, adminDb } from "@/lib/firebase/firebaseAdmin";
 import { NextResponse } from "next/server";
 
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*", // Allows Electron to talk to it
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const { fullName, email, idToken } = await req.json();
@@ -30,7 +41,11 @@ export async function POST(req: Request) {
       displayName: fullName,
     });
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    const response = NextResponse.json({ success: true });
+
+    response.headers.set("Access-Control-Allow-Origin", "*");
+
+    return response;
   } catch (error) {
     console.error("CRASH IN ROUTE:", error);
     return NextResponse.json(
