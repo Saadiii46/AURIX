@@ -273,7 +273,7 @@ export const AuthForm = ({ type }: { type: FormType }) => {
             href={type == "sign-in" ? "/sign-up" : "/sign-in"}
             className="text-[#00e5ff] no-underline hover:underline"
           >
-            {type == "sign-in" ? "SIGN IN" : "SIGN UP"}
+            {type == "sign-in" ? "SIGN UP" : "SIGN IN"}
           </Link>
         </p>
       </div>

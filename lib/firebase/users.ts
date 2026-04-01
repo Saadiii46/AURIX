@@ -70,13 +70,15 @@ export const signInUser = async ({ email, password }: SignInUserProps) => {
 
     const res = await fetch("/api/session", {
       method: "POST",
-      headers: { "Content-Type": "applicaton/json" },
-      body: JSON.stringify(idToken),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
     });
 
     const data = await res.json();
 
     if (!res.ok || res.status === 403) {
+      const errorText = await res.text();
+      console.error("HTML ERROR:", errorText);
       return { success: false, error: data.error };
     }
 

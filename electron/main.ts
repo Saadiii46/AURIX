@@ -48,12 +48,12 @@ function createWindow() {
               "img-src 'self' data: https:; " +
               "media-src 'self' blob: mediastream:; " +
               // Added Firebase Auth & Database domains below
-              "connect-src 'self' https://api.deepgram.com wss://api.deepgram.com https://api.groq.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; " +
+              "connect-src 'self' https://api.deepgram.com wss://api.deepgram.com https://api.groq.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; https://your-vercel-domain.vercel.app https://identitytoolkit.googleapis.com https://securetoken.googleapis.com;" +
               "worker-src 'self' blob:;",
           ],
         },
       });
-    }
+    },
   );
 
   // Permission handler (microphone only)
