@@ -6,7 +6,7 @@ const page = () => {
   if (isLoading) return <div>Checking session...</div>;
   if (!user) return <div>User not logged in</div>;
 
-  return <div>Welcome {user.name}</div>;
+  return <div>Welcome {user?.name}</div>;
 };
 
 export default page;
