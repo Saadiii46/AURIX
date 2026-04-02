@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect, useRef, ReactElement } from "react";
 
 const BAR_COUNT = 80;
