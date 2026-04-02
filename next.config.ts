@@ -2,13 +2,15 @@ import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
 const isVercel = !!process.env.VERCEL; // Check if we are deploying to Vercel
+const isElectronBuild = isProd && !isVercel;
 
 const productionOrigins = ["app://-", "https://aurix-api.vercel.app"];
 
 const nextConfig: NextConfig = {
   // 1. Only use "export" if we are NOT on Vercel
   // This ensures Vercel treats the project as a live Serverless app
-  ...(isVercel ? {} : { output: "export" }),
+
+  ...(isElectronBuild ? { output: "export" } : {}),
 
   distDir: "dist-next",
   images: { unoptimized: true },
@@ -26,10 +28,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Access-Control-Allow-Origin",
-            // Join with a comma, not a space, for standard CORS compliance
-            value: isProd
-              ? productionOrigins.join(", ")
-              : "http://localhost:3000",
+            value: isProd ? "app://-" : "http://localhost:3000",
           },
           {
             key: "Access-Control-Allow-Methods",

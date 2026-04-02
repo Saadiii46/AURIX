@@ -1,5 +1,9 @@
 "use client";
 
+import { API_BASE_URL } from "@/lib/constants";
+import { auth } from "@/lib/firebase/firebaseClient";
+import { signOut } from "firebase/auth";
+import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, ReactElement } from "react";
 
 const BAR_COUNT = 80;
@@ -140,6 +144,24 @@ const MicIcon = () => (
 export default function MainScreen() {
   const [speaking, setSpeaking] = useState<boolean>(false);
   const heights = useWaveform(speaking);
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+
+      await fetch(`${API_BASE_URL}/api/session/`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      console.log("User signed out");
+
+      router.push("/sign-in");
+    } catch (error) {
+      console.error("Logout failed: ", error);
+    }
+  };
 
   /**
    * FIXED: Explicit return type for styling helper
@@ -182,7 +204,10 @@ export default function MainScreen() {
                 : "opacity-80 shadow-[0_0_5px_#00e5ff88]"
             }`}
           />
-          <span className="text-[#00e5ff] text-[11px] font-bold tracking-[0.22em] uppercase">
+          <span
+            onClick={handleLogout}
+            className="text-[#00e5ff] text-[11px] font-bold tracking-[0.22em] uppercase"
+          >
             AURIX ACTIVE
           </span>
         </div>

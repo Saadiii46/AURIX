@@ -5,7 +5,6 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebaseClient";
 import { API_BASE_URL } from "../constants";
-import { useUserStore } from "../store/useUserStore";
 
 interface SignUpUserProps {
   fullName: string;
@@ -74,6 +73,7 @@ export const signInUser = async ({ email, password }: SignInUserProps) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
+      credentials: "include",
     });
 
     const data = await res.json();
@@ -103,22 +103,22 @@ export const signInUser = async ({ email, password }: SignInUserProps) => {
   }
 };
 
-export const getCurrentUser = async () => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/auth/me/`, {
-      method: "GET",
-      credentials: "include",
-      cache: "no-store",
-    });
+// export const getCurrentUser = async () => {
+//   try {
+//     const res = await fetch(`${API_BASE_URL}/api/auth/me/`, {
+//       method: "GET",
+//       credentials: "include",
+//       cache: "no-store",
+//     });
 
-    if (!res.ok) {
-      return null;
-    }
+//     if (!res.ok) {
+//       return null;
+//     }
 
-    const userData = await res.json();
-    return userData;
-  } catch (error) {
-    console.error("Error fetching current user from Electron:", error);
-    return null;
-  }
-};
+//     const userData = await res.json();
+//     return userData;
+//   } catch (error) {
+//     console.error("Error fetching current user:", error);
+//     return null;
+//   }
+// };

@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     response.cookies.set("session", sessionCookie, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      sameSite: "none",
       maxAge: EXPIRES_IN / 1000,
       path: "/",
     });
@@ -37,13 +37,19 @@ export async function POST(req: Request) {
     return response;
   } catch (error) {
     console.error("Error creating session cookie:", error);
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 500 });
   }
 }
 
 export async function DELETE() {
   // Logout → clear cookie
   const response = NextResponse.json({ status: "logged out" });
-  response.cookies.set("session", "", { maxAge: 0, path: "/" });
+  response.cookies.set("session", "", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",
+    maxAge: 0,
+    path: "/",
+  });
   return response;
 }
