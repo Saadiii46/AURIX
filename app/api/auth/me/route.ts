@@ -7,7 +7,12 @@ export async function GET() {
   try {
     const session = (await cookies()).get("session")?.value;
 
-    if (!session) throw new Error("No session found");
+    if (!session) {
+      return NextResponse.json(
+        { succes: false, message: "No session found" },
+        { status: 401 },
+      );
+    }
 
     const userSession = await adminAuth.verifySessionCookie(session, true);
     const db = getFirestore();
@@ -22,7 +27,9 @@ export async function GET() {
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error fetching current user:", error);
-    NextResponse.json({ success: false });
-    return null;
+    return NextResponse.json(
+      { success: false, error: "Internel server error" },
+      { status: 500 },
+    );
   }
 }
