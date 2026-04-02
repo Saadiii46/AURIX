@@ -20,6 +20,7 @@ export const useUserStore = create<UserState>((set) => ({
   fetchUser: async () => {
     set({ isLoading: true });
     const data = await getCurrentUser();
+    console.log("Data recieving from firestore: ", data);
     set({ user: data, isLoading: false });
   },
   clearUser: () => set({ user: null, isLoading: false }),
