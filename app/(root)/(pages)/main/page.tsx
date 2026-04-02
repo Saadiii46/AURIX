@@ -1,3 +1,5 @@
+"use client";
+
 import { useUserStore } from "@/lib/store/useUserStore";
 
 const page = () => {
