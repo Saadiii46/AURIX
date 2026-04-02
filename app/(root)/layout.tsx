@@ -2,41 +2,47 @@
 
 import { useUserStore } from "@/lib/store/useUserStore";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-const layout = ({ children }: { children: React.ReactNode }) => {
+const Layout = ({ children }: { children: React.ReactNode }) => {
   const { fetchUser, user, isLoading } = useUserStore();
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
+  const isAuthPage = pathname === "/sign-in" || pathname === "/sign-up";
+
+  // 1. Initial Fetch and Mount Check
   useEffect(() => {
+    setMounted(true);
     fetchUser();
   }, [fetchUser]);
 
-  if (isLoading) {
+  // 2. Safe Redirect Logic (Fixes the Router error)
+  useEffect(() => {
+    if (mounted && !isLoading && !user && !isAuthPage) {
+      router.push("/sign-in");
+    }
+  }, [mounted, isLoading, user, isAuthPage, router]);
+
+  // 3. Prevent Hydration Mismatch
+  // We return a consistent structure that matches the server's initial render
+  if (!mounted || (isLoading && !isAuthPage)) {
     return (
-      <html lang="en">
-        <body className="bg-[#0f0f0f] flex items-center justify-center h-screen">
-          <div className="animate-pulse text-white font-medium">
-            Initializing Aurix...
-          </div>
-        </body>
-      </html>
+      <div className="bg-[#0f0f0f] flex items-center justify-center h-screen">
+        <div className="animate-pulse text-white font-medium">
+          Initializing Aurix...
+        </div>
+      </div>
     );
   }
 
-  const isAuth = pathname === "/sign-in" || pathname === "sign-up";
-
-  if (!user && !isAuth) {
-    router.push("/sign-in");
-    return null;
-  }
-
+  // 4. Final Render
   return (
-    <div>
+    <div className="min-h-screen bg-[#0f0f0f]">
       <main>{children}</main>
     </div>
   );
 };
 
-export default layout;
+export default Layout;

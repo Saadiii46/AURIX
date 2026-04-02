@@ -1,18 +1,22 @@
 import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
+const isVercel = !!process.env.VERCEL; // Check if we are deploying to Vercel
 
 const productionOrigins = ["app://-", "https://aurix-api.vercel.app"];
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  output: process.env.VERCEL ? undefined : "export", // Static HTML export — Electron loads these files
-  distDir: "dist-next", // Output folder (replaces Vite's /dist)
-  images: {
-    unoptimized: true, // Next.js Image optimization needs a server; disable it
-  },
+  // 1. Only use "export" if we are NOT on Vercel
+  // This ensures Vercel treats the project as a live Serverless app
+  ...(isVercel ? {} : { output: "export" }),
+
+  distDir: "dist-next",
+  images: { unoptimized: true },
   trailingSlash: true,
-  assetPrefix: process.env.NODE_ENV === "production" ? "./" : "",
+
+  // 2. Fix Asset Prefix: Electron needs "./", Vercel needs ""
+  assetPrefix: isVercel ? "" : isProd ? "./" : "",
+
   typescript: { ignoreBuildErrors: true },
 
   async headers() {
@@ -22,8 +26,9 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Access-Control-Allow-Origin",
+            // Join with a comma, not a space, for standard CORS compliance
             value: isProd
-              ? productionOrigins.join(" ")
+              ? productionOrigins.join(", ")
               : "http://localhost:3000",
           },
           {

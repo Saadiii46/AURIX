@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { signInUser, signUpUser } from "@/lib/firebase/users";
 import { useRouter } from "next/navigation";
+import { useUserStore } from "@/lib/store/useUserStore";
 
 // ------ Declaring the type of form (eg: sign-up or sign-in) ------ //
 
@@ -29,6 +30,7 @@ export const AuthForm = ({ type }: { type: FormType }) => {
   const router = useRouter();
 
   const [showPassword, setShowPassword] = useState(false);
+  const { fetchUser } = useUserStore();
 
   const formSchema = authFormSchema(type); // Setting the type of form
 
@@ -58,6 +60,10 @@ export const AuthForm = ({ type }: { type: FormType }) => {
       if (!user.success) {
         console.log("failed:", user.error);
         return;
+      }
+
+      if (user) {
+        await fetchUser();
       }
 
       router.push("/main");

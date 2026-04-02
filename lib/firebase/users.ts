@@ -5,6 +5,7 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebaseClient";
 import { API_BASE_URL } from "../constants";
+import { useUserStore } from "../store/useUserStore";
 
 interface SignUpUserProps {
   fullName: string;
@@ -107,6 +108,7 @@ export const getCurrentUser = async () => {
     const res = await fetch(`${API_BASE_URL}/api/auth/me/`, {
       method: "GET",
       credentials: "include",
+      cache: "no-store",
     });
 
     if (!res.ok) {
