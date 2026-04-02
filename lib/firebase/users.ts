@@ -101,3 +101,22 @@ export const signInUser = async ({ email, password }: SignInUserProps) => {
     };
   }
 };
+
+export const getCurrentUser = async () => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/auth/me/`, {
+      method: "GET",
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const userData = await res.json();
+    return userData;
+  } catch (error) {
+    console.error("Error fetching current user from Electron:", error);
+    return null;
+  }
+};

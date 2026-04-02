@@ -3,17 +3,6 @@ import { NextResponse } from "next/server";
 
 const EXPIRES_IN = 5 * 60 * 60 * 24 * 1000;
 
-export async function OPTIONS() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*", // Allows Electron to talk to it
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
-  });
-}
-
 export async function POST(req: Request) {
   try {
     const { idToken } = await req.json();
@@ -44,8 +33,6 @@ export async function POST(req: Request) {
       maxAge: EXPIRES_IN / 1000,
       path: "/",
     });
-
-    response.headers.set("Access-Control-Allow-Origin", "*");
 
     return response;
   } catch (error) {

@@ -1,7 +1,12 @@
-import React from "react";
+import { useUserStore } from "@/lib/store/useUserStore";
 
 const page = () => {
-  return <div>Main Page</div>;
+  const { user, isLoading } = useUserStore();
+
+  if (isLoading) return <div>Checking session...</div>;
+  if (!user) return <div>User not logged in</div>;
+
+  return <div>Welcome {user.name}</div>;
 };
 
 export default page;
