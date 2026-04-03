@@ -33,7 +33,7 @@ export const signUpUser = async ({
     await sendEmailVerification(user);
     const idToken = await user.getIdToken();
 
-    await fetch(`${API_BASE_URL}/api/auth/sign-up`, {
+    await fetch(`${API_BASE_URL}/api/auth/sign-up/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fullName, email, idToken }),

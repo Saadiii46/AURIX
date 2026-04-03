@@ -2,6 +2,7 @@
 
 import { API_BASE_URL } from "@/lib/constants";
 import { auth } from "@/lib/firebase/firebaseClient";
+import { authStore } from "@/lib/store/authStore";
 import { signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { useState, useEffect, useRef, ReactElement } from "react";
@@ -145,6 +146,7 @@ export default function MainScreen() {
   const [speaking, setSpeaking] = useState<boolean>(false);
   const heights = useWaveform(speaking);
   const router = useRouter();
+  const { user, clearUser } = authStore();
 
   const handleLogout = async () => {
     try {
@@ -156,7 +158,7 @@ export default function MainScreen() {
       });
 
       console.log("User signed out");
-
+      clearUser();
       router.push("/sign-in");
     } catch (error) {
       console.error("Logout failed: ", error);
@@ -210,6 +212,7 @@ export default function MainScreen() {
           >
             AURIX ACTIVE
           </span>
+          <span>Welcome {user?.name}</span>
         </div>
         <button className="w-[46px] h-[46px] rounded-full border border-[#1a4040] bg-[#0a1a1a] flex items-center justify-center cursor-pointer hover:bg-[#0f2626] transition-colors">
           <UserIcon />
