@@ -4,6 +4,9 @@ const isProd = process.env.NODE_ENV === "production";
 const isVercel = !!process.env.VERCEL; // Check if we are deploying to Vercel
 const isElectronBuild = !!process.env.ELECTRON_BUILD;
 
+console.log("ELECTRON_BUILD:", process.env.ELECTRON_BUILD);
+console.log("isElectronBuild:", isElectronBuild);
+
 const productionOrigins = ["app://-", "https://aurix-api.vercel.app"];
 
 const nextConfig: NextConfig = {
