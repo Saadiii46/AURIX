@@ -212,7 +212,9 @@ export default function MainScreen() {
           >
             AURIX ACTIVE
           </span>
-          <span>Welcome {user?.name}</span>
+          <span className="text-[#00e5ff] text-[11px] font-bold tracking-[0.22em] uppercase">
+            Welcome {user?.name}
+          </span>
         </div>
         <button className="w-[46px] h-[46px] rounded-full border border-[#1a4040] bg-[#0a1a1a] flex items-center justify-center cursor-pointer hover:bg-[#0f2626] transition-colors">
           <UserIcon />
