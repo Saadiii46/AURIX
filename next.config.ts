@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
 const isVercel = !!process.env.VERCEL; // Check if we are deploying to Vercel
-const isElectronBuild = isProd && !isVercel;
+const isElectronBuild = !!process.env.ELECTRON_BUILD;
 
 const productionOrigins = ["app://-", "https://aurix-api.vercel.app"];
 
@@ -17,7 +17,7 @@ const nextConfig: NextConfig = {
   trailingSlash: true,
 
   // 2. Fix Asset Prefix: Electron needs "./", Vercel needs ""
-  assetPrefix: isVercel ? "" : isProd ? "./" : "",
+  assetPrefix: isVercel ? "" : isElectronBuild ? "./" : "",
 
   typescript: { ignoreBuildErrors: true },
 
