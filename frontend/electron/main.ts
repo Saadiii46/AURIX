@@ -13,12 +13,12 @@ import serve from "electron-serve";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const loadURL = serve({ directory: path.join(__dirname, "../dist-next") });
+const loadURL = serve({ directory: path.join(__dirname, "../out") });
 
 const IS_PROD = process.env.NODE_ENV === "production";
 const API_BASE_URL = IS_PROD
   ? "https://aurix-api.vercel.app"
-  : "http://localhost:3000";
+  : "http://localhost:8000";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;

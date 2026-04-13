@@ -2,23 +2,25 @@
 
 import { API_BASE_URL } from "@/lib/constants";
 import { authStore } from "@/lib/store/authStore";
-import { redirect } from "next/navigation";
+import { redirect, useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const { user, setUser } = authStore();
 
+  const router = useRouter();
+
   useEffect(() => {
     if (user) return;
 
     const checkSession = async () => {
-      const res = await fetch(`${API_BASE_URL}/api/auth/verify`, {
+      const res = await fetch(`${API_BASE_URL}/verify`, {
         method: "GET",
         credentials: "include",
       });
 
       if (!res.ok) {
-        redirect("/sign-in");
+        router.push("/sign-in");
       }
 
       const data = await res.json();

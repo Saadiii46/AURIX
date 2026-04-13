@@ -33,7 +33,7 @@ export const signUpUser = async ({
     await sendEmailVerification(user);
     const idToken = await user.getIdToken();
 
-    await fetch(`${API_BASE_URL}/api/auth/sign-up/`, {
+    await fetch(`${API_BASE_URL}/sign-up`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fullName, email, idToken }),
@@ -69,7 +69,7 @@ export const signInUser = async ({ email, password }: SignInUserProps) => {
     const user = userCredential.user;
     const idToken = await user.getIdToken();
 
-    const res = await fetch(`${API_BASE_URL}/api/session/`, {
+    const res = await fetch(`${API_BASE_URL}/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
