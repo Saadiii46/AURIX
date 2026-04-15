@@ -10,6 +10,8 @@ import {
 import path from "path";
 import { fileURLToPath } from "url";
 import serve from "electron-serve";
+import { getVSCodeBridge } from './vscode-bridge.js';
+import { AGENT_TOOLS, AGENT_SYSTEM_PROMPT, AGENT_MODEL } from './agent-tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -122,6 +124,138 @@ ipcMain.on("window-maximize", () => {
   }
 });
 ipcMain.on("window-close", () => mainWindow?.hide());
+
+// --- Helper ---
+async function extractBackendError(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    if (typeof body?.detail === 'string') return body.detail;
+    if (body?.detail) return JSON.stringify(body.detail);
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+// --- Chat IPC Handlers ---
+
+ipcMain.handle('chat-send-message', async (_event, message: string) => {
+  try {
+    const backendResponse = await fetch(`${API_BASE_URL}/api/v1/groq/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+    if (!backendResponse.ok) {
+      throw new Error(await extractBackendError(backendResponse, 'Chat request failed'));
+    }
+    const data = (await backendResponse.json()) as { message: string };
+    return { success: true, response: data.message };
+  } catch (error: any) {
+    console.error('Chat error:', error);
+    return { success: false, error: error.message || 'Unknown chat error' };
+  }
+});
+
+ipcMain.handle('chat-clear-history', async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/groq/chat/history`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Failed to clear history'));
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('chat-get-history', async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/groq/chat/history`);
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Failed to get history'));
+    const data = (await response.json()) as { history: any[] };
+    return { success: true, history: data.history };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('chat-set-system-prompt', async (_event, prompt: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/groq/chat/system-prompt`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Failed to set system prompt'));
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+// --- Agent IPC Handler ---
+
+ipcMain.handle('agent-execute-task', async (_event, message: string) => {
+  try {
+    const bridge = getVSCodeBridge();
+    if (!bridge.isConnected()) {
+      throw new Error('VS Code extension not connected. Please open VS Code and ensure the Aurix extension is running.');
+    }
+
+    await fetch(`${API_BASE_URL}/api/v1/groq/chat/system-prompt`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: AGENT_SYSTEM_PROMPT }),
+    });
+    await fetch(`${API_BASE_URL}/api/v1/groq/chat/history`, { method: 'DELETE' });
+
+    const steps: Array<{ tool: string; args: any; result: any }> = [];
+
+    let agentResponse = await fetch(`${API_BASE_URL}/api/v1/groq/chat/agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, tools: AGENT_TOOLS }),
+    });
+    if (!agentResponse.ok) throw new Error(await extractBackendError(agentResponse, 'Agent request failed'));
+
+    let result = (await agentResponse.json()) as {
+      type: string; response?: string;
+      tool_calls?: Array<{ id: string; name: string; arguments: any }>;
+    };
+
+    while (result.type === 'tool_calls' && result.tool_calls) {
+      const toolResults: Array<{ tool_call_id: string; result: any }> = [];
+      for (const toolCall of result.tool_calls) {
+        let toolResult: any;
+        try { toolResult = await bridge.sendCommand(toolCall.name, toolCall.arguments); }
+        catch (err: any) { toolResult = { error: err.message }; }
+        steps.push({ tool: toolCall.name, args: toolCall.arguments, result: toolResult });
+        if (mainWindow) {
+          mainWindow.webContents.send('agent-step', { tool: toolCall.name, args: toolCall.arguments, result: toolResult, timestamp: Date.now() });
+        }
+        toolResults.push({ tool_call_id: toolCall.id, result: toolResult });
+      }
+
+      agentResponse = await fetch(`${API_BASE_URL}/api/v1/groq/chat/agent/tool-results`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tool_results: toolResults }),
+      });
+      if (!agentResponse.ok) throw new Error(await extractBackendError(agentResponse, 'Agent tool results failed'));
+      result = (await agentResponse.json()) as { type: string; response?: string; tool_calls?: Array<{ id: string; name: string; arguments: any }> };
+    }
+
+    await fetch(`${API_BASE_URL}/api/v1/groq/chat/system-prompt`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: 'You are a helpful voice assistant. Provide clear, concise, and friendly responses.' }),
+    });
+
+    return { success: true, response: result.response || 'Done.', steps };
+  } catch (error: any) {
+    console.error('Agent execution error:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 // System tray
 function createTray() {
