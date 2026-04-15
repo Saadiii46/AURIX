@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+python-dotenv
+groq
+openai>=1.30.0
+deepgram-sdk>=3.5.0
+cohere>=5.9.0
+qdrant-client>=1.11.0
+firebase-admin
+pydantic[email]
+python-multipart

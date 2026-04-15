@@ -1,27 +1,24 @@
+# pyright: reportMissingImports=false
+
 """
 Deepgram STT/TTS Service
 """
 
+import os
+from dotenv import load_dotenv
 from deepgram import DeepgramClient, PrerecordedOptions, SpeakOptions
-from app.core.config import settings
+
+load_dotenv()
 
 
 class DeepgramService:
     """Service for Deepgram speech-to-text and text-to-speech"""
 
     def __init__(self):
-        self.client = DeepgramClient(api_key=settings.DEEPGRAM_API_KEY)
+        self.client = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY", ""))
 
     async def transcribe(self, audio_data: bytes) -> dict:
-        """
-        Transcribe audio data to text
-
-        Args:
-            audio_data: Audio file bytes
-
-        Returns:
-            dict with transcript and metadata
-        """
+        """Transcribe audio data to text"""
         try:
             options = PrerecordedOptions(
                 model="nova-2",
@@ -55,16 +52,7 @@ class DeepgramService:
             raise Exception(f"Transcription failed: {str(e)}")
 
     async def text_to_speech(self, text: str, voice: str = "aura-asteria-en") -> bytes:
-        """
-        Convert text to speech
-
-        Args:
-            text: Text to convert
-            voice: Voice model to use
-
-        Returns:
-            Raw audio bytes (mp3)
-        """
+        """Convert text to speech, returns raw audio bytes (mp3)"""
         try:
             options = SpeakOptions(model=voice)
             speak_source = {"text": text}

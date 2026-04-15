@@ -1,31 +1,32 @@
+# pyright: reportMissingImports=false
+
 """
 Qdrant Vector Database Service
 """
 
+import os
+import uuid
+from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from app.core.config import settings
 from typing import List, Dict, Any
-import uuid
+
+load_dotenv()
 
 
 class VectorService:
     """Service for Qdrant vector database operations"""
 
     def __init__(self):
+        qdrant_api_key = os.getenv("QDRANT_API_KEY", "")
         self.client = QdrantClient(
-            url=settings.QDRANT_URL,
-            api_key=settings.QDRANT_API_KEY if settings.QDRANT_API_KEY else None
+            url=os.getenv("QDRANT_URL", "http://localhost:6333"),
+            api_key=qdrant_api_key if qdrant_api_key else None
         )
-        self.collection_name = settings.QDRANT_COLLECTION
+        self.collection_name = os.getenv("QDRANT_COLLECTION", "aurix_docs")
 
     async def ensure_collection(self, vector_size: int = 1024):
-        """
-        Ensure collection exists, create if not
-
-        Args:
-            vector_size: Dimension of embedding vectors (Cohere v3.0 = 1024)
-        """
+        """Ensure collection exists, create if not"""
         try:
             collections = self.client.get_collections().collections
             collection_names = [c.name for c in collections]
@@ -47,16 +48,7 @@ class VectorService:
         vectors: List[List[float]],
         payloads: List[Dict[str, Any]]
     ) -> List[str]:
-        """
-        Insert vectors into collection
-
-        Args:
-            vectors: List of embedding vectors
-            payloads: List of metadata for each vector
-
-        Returns:
-            List of inserted point IDs
-        """
+        """Insert vectors into collection"""
         try:
             await self.ensure_collection()
 
@@ -90,17 +82,7 @@ class VectorService:
         limit: int = 5,
         score_threshold: float = 0.7
     ) -> List[Dict[str, Any]]:
-        """
-        Search for similar vectors
-
-        Args:
-            query_vector: Query embedding vector
-            limit: Maximum number of results
-            score_threshold: Minimum similarity score
-
-        Returns:
-            List of search results with scores and payloads
-        """
+        """Search for similar vectors"""
         try:
             results = self.client.search(
                 collection_name=self.collection_name,

@@ -1,1 +1,0 @@
-# Aurix API Application

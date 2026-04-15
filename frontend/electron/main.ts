@@ -70,14 +70,6 @@ function createWindow() {
     },
   );
 
-  // Permission handler (microphone only)
-  //   mainWindow.webContents.session.setPermissionRequestHandler(
-  //     (webContents, permission, callback) => {
-  //       console.log("Permission requested:", permission);
-  //       callback(permission === "media");
-  //     },
-  //   );
-
   // Disable right-click context menu
   mainWindow.webContents.on("context-menu", (e) => e.preventDefault());
 
@@ -95,7 +87,6 @@ function createWindow() {
   mainWindow.webContents.on("will-navigate", (e) => e.preventDefault());
 
   // Load app
-  // Load app — replace the existing if/else block
   if (process.env.NEXT_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.NEXT_DEV_SERVER_URL);
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -137,7 +128,7 @@ async function extractBackendError(response: Response, fallback: string): Promis
   }
 }
 
-// --- Chat IPC Handlers ---
+// ─── Chat IPC Handlers ─────────────────────────────────────────
 
 ipcMain.handle('chat-send-message', async (_event, message: string) => {
   try {
@@ -192,7 +183,194 @@ ipcMain.handle('chat-set-system-prompt', async (_event, prompt: string) => {
   }
 });
 
-// --- Agent IPC Handler ---
+// ─── Deepgram STT IPC Handlers ─────────────────────────────────
+
+ipcMain.handle('deepgram-status', async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`);
+    if (!response.ok) throw new Error('Backend health check failed');
+    return { success: true, status: 'connected' };
+  } catch (error: any) {
+    return { success: false, status: 'disconnected', error: error.message };
+  }
+});
+
+ipcMain.handle('deepgram-transcribe-audio', async (_event, filePath: string) => {
+  try {
+    const fs = await import('fs');
+    const audioBuffer = fs.readFileSync(filePath);
+    const blob = new Blob([audioBuffer]);
+    const formData = new FormData();
+    formData.append('file', blob, 'audio.webm');
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/deepgram/transcribe`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Transcription failed'));
+    const data = await response.json();
+    return { success: true, ...data };
+  } catch (error: any) {
+    console.error('Deepgram transcribe error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('deepgram-save-and-transcribe', async (_event, audioBuffer: ArrayBuffer) => {
+  try {
+    const blob = new Blob([Buffer.from(audioBuffer)]);
+    const formData = new FormData();
+    formData.append('file', blob, 'audio.webm');
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/deepgram/transcribe`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Transcription failed'));
+    const data = await response.json();
+    return { success: true, ...data };
+  } catch (error: any) {
+    console.error('Deepgram save-and-transcribe error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// ─── TTS IPC Handlers ──────────────────────────────────────────
+
+let currentTTSVoice = 'aura-asteria-en';
+
+ipcMain.handle('tts-synthesize', async (_event, text: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/deepgram/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice: currentTTSVoice }),
+    });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'TTS synthesis failed'));
+    const arrayBuffer = await response.arrayBuffer();
+    return { success: true, audio: Buffer.from(arrayBuffer) };
+  } catch (error: any) {
+    console.error('TTS error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('tts-set-voice', async (_event, voice: string) => {
+  currentTTSVoice = voice;
+  return { success: true, voice: currentTTSVoice };
+});
+
+ipcMain.handle('tts-get-voices', async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/deepgram/voices`);
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Failed to get voices'));
+    const data = (await response.json()) as { voices: string[] };
+    return { success: true, voices: data.voices };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('tts-status', async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`);
+    if (!response.ok) throw new Error('Backend health check failed');
+    return { success: true, status: 'connected' };
+  } catch (error: any) {
+    return { success: false, status: 'disconnected', error: error.message };
+  }
+});
+
+// ─── Retrieval (RAG) IPC Handlers ──────────────────────────────
+
+ipcMain.handle('retrieval-search', async (_event, query: string, limit?: number) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/rag/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, limit: limit || 5 }),
+    });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Search failed'));
+    const data = await response.json();
+    return { success: true, ...data };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('retrieval-search-docs', async (_event, query: string, limit?: number) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/rag/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, limit: limit || 5 }),
+    });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Search failed'));
+    const data = await response.json();
+    return { success: true, ...data };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('retrieval-index-document', async (_event, content: string, metadata?: Record<string, any>) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/rag/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, metadata }),
+    });
+    if (!response.ok) throw new Error(await extractBackendError(response, 'Document upload failed'));
+    const data = await response.json();
+    return { success: true, ...data };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('retrieval-status', async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/rag/collection/info`);
+    if (!response.ok) throw new Error(await extractBackendError(response, 'RAG status check failed'));
+    const data = await response.json();
+    return { success: true, ...data };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+// ─── VS Code Bridge IPC Handlers ───────────────────────────────
+
+ipcMain.handle('vscode-connect', async () => {
+  try {
+    const bridge = getVSCodeBridge();
+    await bridge.connect();
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vscode-disconnect', async () => {
+  try {
+    const bridge = getVSCodeBridge();
+    bridge.disconnect();
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vscode-status', async () => {
+  try {
+    const bridge = getVSCodeBridge();
+    return { success: true, connected: bridge.isConnected() };
+  } catch (error: any) {
+    return { success: false, connected: false, error: error.message };
+  }
+});
+
+// ─── Agent IPC Handler ─────────────────────────────────────────
 
 ipcMain.handle('agent-execute-task', async (_event, message: string) => {
   try {

@@ -1,9 +1,11 @@
+# pyright: reportMissingImports=false
+
 """
 RAG Retrieval Service - Combines Embedding and Vector services
 """
 
-from app.services.embedding_service import EmbeddingService
-from app.services.vector_service import VectorService
+from services.embedding_service import EmbeddingService
+from services.vector_service import VectorService
 from typing import Dict, Any, Optional
 
 
@@ -20,32 +22,19 @@ class RetrievalService:
         limit: int = 5,
         score_threshold: float = 0.7
     ) -> Dict[str, Any]:
-        """
-        Perform semantic search
-
-        Args:
-            query: Search query text
-            limit: Maximum results
-            score_threshold: Minimum similarity score
-
-        Returns:
-            Search results with relevant documents
-        """
+        """Perform semantic search"""
         try:
-            # Generate query embedding
             query_embedding = await self.embedding_service.generate_embedding(
                 text=query,
                 input_type="search_query"
             )
 
-            # Search in vector database
             results = await self.vector_service.search_vectors(
                 query_vector=query_embedding,
                 limit=limit,
                 score_threshold=score_threshold
             )
 
-            # Format results
             formatted_results = [
                 {
                     "id": result["id"],
@@ -69,30 +58,18 @@ class RetrievalService:
         content: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Upload document to RAG pipeline
-
-        Args:
-            content: Document text content
-            metadata: Optional metadata
-
-        Returns:
-            Upload status and document ID
-        """
+        """Upload document to RAG pipeline"""
         try:
-            # Generate embedding
             embedding = await self.embedding_service.generate_embedding(
                 text=content,
                 input_type="search_document"
             )
 
-            # Prepare payload
             payload = {
                 "content": content,
                 "metadata": metadata or {}
             }
 
-            # Insert into vector database
             ids = await self.vector_service.insert_vectors(
                 vectors=[embedding],
                 payloads=[payload]
