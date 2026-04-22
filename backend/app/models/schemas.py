@@ -42,14 +42,6 @@ class TranscriptionResponse(BaseModel):
     words: Optional[List[Dict[str, Any]]] = None
 
 
-# --- Deepgram TTS Models ---
-
-class TTSRequest(BaseModel):
-    text: str
-    voice: str = "aura-asteria-en"
-    model: str = "aura-asteria-en"
-
-
 # --- Groq Chat Models ---
 
 class ChatMessage(BaseModel):
@@ -70,6 +62,10 @@ class ChatResponse(BaseModel):
 
 class SimpleMessageRequest(BaseModel):
     message: str
+
+class StreamTTSRequest(BaseModel):
+    message: str
+    voice: str = "Nate"
 
 class SystemPromptRequest(BaseModel):
     prompt: str

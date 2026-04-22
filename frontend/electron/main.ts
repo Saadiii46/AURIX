@@ -62,7 +62,7 @@ function createWindow() {
               "font-src 'self' https://fonts.gstatic.com; " +
               "img-src 'self' data: https:; " +
               "media-src 'self' blob: mediastream:; " +
-              `connect-src 'self' ${API_BASE_URL} https://aurix-api.vercel.app https://api.deepgram.com wss://api.deepgram.com https://api.groq.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; ` +
+              `connect-src 'self' ${API_BASE_URL} https://aurix-api.vercel.app https://api.deepgram.com wss://api.deepgram.com https://api.groq.com https://api.inworld.ai https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com; ` +
               "worker-src 'self' blob:;",
           ],
         },
@@ -145,6 +145,94 @@ ipcMain.handle('chat-send-message', async (_event, message: string) => {
   } catch (error: any) {
     console.error('Chat error:', error);
     return { success: false, error: error.message || 'Unknown chat error' };
+  }
+});
+
+// Streaming Chat + TTS handler
+ipcMain.handle('chat-send-message-streaming', async (_event, message: string) => {
+  try {
+    console.log('Streaming chat message received:', message);
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/groq/chat/stream-tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, voice: currentTTSVoice }),
+    });
+
+    if (!response.ok) {
+      const errorMsg = await extractBackendError(response, 'Stream request failed');
+      throw new Error(errorMsg);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No response body');
+
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let sseBuffer = '';
+    let audioChunkCount = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      sseBuffer += decoder.decode(value, { stream: true });
+
+      // SSE events are separated by double newlines
+      while (sseBuffer.includes('\n\n')) {
+        const eventEnd = sseBuffer.indexOf('\n\n');
+        const eventBlock = sseBuffer.slice(0, eventEnd);
+        sseBuffer = sseBuffer.slice(eventEnd + 2);
+
+        let eventType = '';
+        let eventData = '';
+
+        for (const line of eventBlock.split('\n')) {
+          if (line.startsWith('event: ')) {
+            eventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            eventData = line.slice(6);
+          }
+        }
+
+        if (!eventType || !eventData) continue;
+
+        try {
+          const parsed = JSON.parse(eventData);
+
+          if (eventType === 'text') {
+            fullText += parsed.text;
+            if (mainWindow) {
+              mainWindow.webContents.send('streaming-text', parsed.text);
+            }
+          } else if (eventType === 'audio') {
+            audioChunkCount++;
+            console.log(`Sending audio chunk #${audioChunkCount} to renderer, base64 length: ${parsed.audio.length}`);
+            if (mainWindow) {
+              mainWindow.webContents.send('streaming-audio', parsed.audio);
+            }
+          } else if (eventType === 'done') {
+            console.log(`Stream complete. Total audio chunks sent: ${audioChunkCount}`);
+            if (mainWindow) {
+              mainWindow.webContents.send('streaming-done');
+            }
+          } else if (eventType === 'error') {
+            console.error('Stream error from backend:', parsed.error);
+          }
+        } catch (parseErr) {
+          console.warn('Failed to parse SSE data:', parseErr);
+        }
+      }
+    }
+
+    return { success: true, response: fullText };
+  } catch (error: any) {
+    console.error('Streaming chat error:', error);
+    // Notify renderer that stream is done (error case)
+    if (mainWindow) {
+      mainWindow.webContents.send('streaming-done');
+    }
+    return { success: false, error: error.message || 'Unknown streaming error' };
   }
 });
 
@@ -237,17 +325,20 @@ ipcMain.handle('deepgram-save-and-transcribe', async (_event, audioBuffer: Array
 
 // ─── TTS IPC Handlers ──────────────────────────────────────────
 
-let currentTTSVoice = 'aura-asteria-en';
+let currentTTSVoice = 'Nate';
 
 ipcMain.handle('tts-synthesize', async (_event, text: string) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/deepgram/tts`, {
+    console.log('TTS request (InWorld):', text.substring(0, 50) + (text.length > 50 ? '...' : ''));
+
+    const response = await fetch(`${API_BASE_URL}/api/v1/groq/chat/stream-tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice: currentTTSVoice }),
+      body: JSON.stringify({ message: text, voice: currentTTSVoice }),
     });
     if (!response.ok) throw new Error(await extractBackendError(response, 'TTS synthesis failed'));
     const arrayBuffer = await response.arrayBuffer();
+    console.log('TTS audio received:', arrayBuffer.byteLength, 'bytes');
     return { success: true, audio: Buffer.from(arrayBuffer) };
   } catch (error: any) {
     console.error('TTS error:', error);
@@ -257,25 +348,15 @@ ipcMain.handle('tts-synthesize', async (_event, text: string) => {
 
 ipcMain.handle('tts-set-voice', async (_event, voice: string) => {
   currentTTSVoice = voice;
+  console.log('TTS voice changed to:', voice);
   return { success: true, voice: currentTTSVoice };
-});
-
-ipcMain.handle('tts-get-voices', async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/deepgram/voices`);
-    if (!response.ok) throw new Error(await extractBackendError(response, 'Failed to get voices'));
-    const data = (await response.json()) as { voices: string[] };
-    return { success: true, voices: data.voices };
-  } catch (error: any) {
-    return { success: false, error: error.message };
-  }
 });
 
 ipcMain.handle('tts-status', async () => {
   try {
     const response = await fetch(`${API_BASE_URL}/health`);
     if (!response.ok) throw new Error('Backend health check failed');
-    return { success: true, status: 'connected' };
+    return { success: true, status: 'connected', voice: currentTTSVoice };
   } catch (error: any) {
     return { success: false, status: 'disconnected', error: error.message };
   }

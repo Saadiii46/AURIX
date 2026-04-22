@@ -1,18 +1,18 @@
 # pyright: reportMissingImports=false
 
 """
-Deepgram STT/TTS Service
+Deepgram STT Service
 """
 
 import os
 from dotenv import load_dotenv
-from deepgram import DeepgramClient, PrerecordedOptions, SpeakOptions
+from deepgram import DeepgramClient, PrerecordedOptions
 
 load_dotenv()
 
 
 class DeepgramService:
-    """Service for Deepgram speech-to-text and text-to-speech"""
+    """Service for Deepgram speech-to-text"""
 
     def __init__(self):
         self.client = DeepgramClient(api_key=os.getenv("DEEPGRAM_API_KEY", ""))
@@ -50,14 +50,3 @@ class DeepgramService:
 
         except Exception as e:
             raise Exception(f"Transcription failed: {str(e)}")
-
-    async def text_to_speech(self, text: str, voice: str = "aura-asteria-en") -> bytes:
-        """Convert text to speech, returns raw audio bytes (mp3)"""
-        try:
-            options = SpeakOptions(model=voice)
-            speak_source = {"text": text}
-            response = self.client.speak.rest.v("1").stream_memory(speak_source, options)
-            return response.stream_memory.getbuffer().tobytes()
-
-        except Exception as e:
-            raise Exception(f"TTS failed: {str(e)}")
