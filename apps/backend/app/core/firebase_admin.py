@@ -10,16 +10,17 @@ from firebase_admin import credentials, firestore, auth
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+load_dotenv()  # apps/backend/.env
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '.env'))  # root .env fallback
 
-project_id: str = os.getenv("FIREBASE_PROJECT_ID")
-client_email: str = os.getenv("FIREBASE_CLIENT_EMAIL")
-raw_private_key: str = os.getenv("FIREBASE_PRIVATE_KEY")
-token_uri: str = os.getenv("TOKEN_URI")
-private_key_id: str = os.getenv("PRIVATE_KEY_ID")
-client_id: str = os.getenv("CLIENT_ID")
+project_id: str = os.getenv("FIREBASE_PROJECT_ID", "")
+client_email: str = os.getenv("FIREBASE_CLIENT_EMAIL", "")
+raw_private_key: str = os.getenv("FIREBASE_PRIVATE_KEY", "")
+token_uri: str = os.getenv("TOKEN_URI", "")
+private_key_id: str = os.getenv("PRIVATE_KEY_ID", "")
+client_id: str = os.getenv("CLIENT_ID", "")
 
-private_key: str = raw_private_key.replace("\\n", "\n").strip('"').strip()
+private_key: str = raw_private_key.replace("\\n", "\n").strip('"').strip() if raw_private_key else ""
 
 def initialize_firebase_admin():
 
@@ -64,8 +65,8 @@ _db = None
 def get_db():
     global _db
     if _db is None:
-        _app = initialize_firebase_admin()
-        _db = firestore.client(_app)
+        initialize_firebase_admin()
+        _db = firestore.client()
     return _db
 
 def get_auth():

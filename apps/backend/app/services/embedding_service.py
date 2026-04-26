@@ -10,6 +10,7 @@ import cohere
 from typing import List
 
 load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 
 class EmbeddingService:

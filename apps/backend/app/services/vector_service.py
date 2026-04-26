@@ -12,6 +12,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 from typing import List, Dict, Any
 
 load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 
 class VectorService:

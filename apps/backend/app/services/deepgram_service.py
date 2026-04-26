@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from deepgram import DeepgramClient, PrerecordedOptions
 
 load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 
 class DeepgramService:

@@ -8,7 +8,8 @@ Load environment variables using os.getenv (matching existing AURIX pattern)
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # apps/backend/.env
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '.env'))  # root .env fallback
 
 # API Configuration
 API_V1_PREFIX = "/api/v1"

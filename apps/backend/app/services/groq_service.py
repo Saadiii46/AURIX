@@ -12,6 +12,7 @@ from openai import OpenAI
 from typing import List, Dict, Any, Optional
 
 load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 logger = logging.getLogger(__name__)
 
