@@ -10,3 +10,8 @@ qdrant-client>=1.11.0
 firebase-admin
 pydantic[email]
 python-multipart
+
+# LangGraph
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-groq>=0.2.0

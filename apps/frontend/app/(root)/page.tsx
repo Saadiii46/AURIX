@@ -5,13 +5,10 @@ import { auth } from "@/lib/firebase/firebaseClient";
 import { authStore } from "@/lib/store/authStore";
 import { signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { useState, useEffect, useRef, useCallback, ReactElement } from "react";
+import { useState, useRef, useCallback, ReactElement, useEffect } from "react";
 
 const BAR_COUNT = 80;
 
-/**
- * FIXED: Added 'active: boolean' type
- */
 function useWaveform(active: boolean): number[] {
   const [heights, setHeights] = useState<number[]>(() =>
     Array(BAR_COUNT).fill(2),
@@ -53,9 +50,6 @@ function useWaveform(active: boolean): number[] {
   return heights;
 }
 
-/**
- * FIXED: Added Interface for Props
- */
 interface SineWaveProps {
   speaking: boolean;
   offset: number;
@@ -142,6 +136,12 @@ const MicIcon = () => (
   </svg>
 );
 
+interface AgentStep {
+  tool: string;
+  args: Record<string, unknown>;
+  timestamp: number;
+}
+
 export default function MainScreen() {
   const [speaking, setSpeaking] = useState<boolean>(false);
   const [recording, setRecording] = useState<boolean>(false);
@@ -149,6 +149,15 @@ export default function MainScreen() {
   const heights = useWaveform(speaking || recording);
   const router = useRouter();
   const { user, clearUser } = authStore();
+
+  // New feature states
+  const [ttsEnabled, setTtsEnabled] = useState<boolean>(true);
+  const [agentMode, setAgentMode] = useState<boolean>(false);
+  const [lastUserText, setLastUserText] = useState<string>("");
+  const [streamingAIText, setStreamingAIText] = useState<string>("");
+  const [lastAIText, setLastAIText] = useState<string>("");
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
+  const streamingTextRef = useRef<string>("");
 
   // MediaRecorder refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -206,6 +215,10 @@ export default function MainScreen() {
 
   const streamTTSResponse = useCallback(
     async (transcript: string) => {
+      // Reset streaming text
+      streamingTextRef.current = "";
+      setStreamingAIText("");
+
       const response = await fetch(
         `${API_BASE_URL}/api/v1/groq/chat/stream-tts`,
         {
@@ -239,10 +252,17 @@ export default function MainScreen() {
             const dataStr = line.slice(6);
             try {
               const data = JSON.parse(dataStr);
-              if (eventType === "audio" && data.audio) {
+              if (eventType === "text" && data.text) {
+                // Accumulate streaming text for live display
+                streamingTextRef.current += data.text;
+                setStreamingAIText(streamingTextRef.current);
+              } else if (eventType === "audio" && data.audio && ttsEnabled) {
+                // Only enqueue audio if TTS is enabled
                 enqueueAudio(data.audio);
               } else if (eventType === "done") {
-                // Stream complete
+                // Stream complete — save final text
+                setLastAIText(streamingTextRef.current);
+                setStreamingAIText("");
               }
             } catch {
               // Ignore malformed JSON
@@ -251,8 +271,126 @@ export default function MainScreen() {
           }
         }
       }
+
+      // Fallback: if done event wasn't received, save what we have
+      if (streamingTextRef.current) {
+        setLastAIText(streamingTextRef.current);
+        setStreamingAIText("");
+      }
     },
-    [enqueueAudio],
+    [enqueueAudio, ttsEnabled],
+  );
+
+  const sendAgentMessage = useCallback(
+    async (transcript: string) => {
+      setStreamingAIText("");
+      setLastAIText("");
+      setAgentSteps([]);
+
+      try {
+        // Default tools for agent mode
+        const tools = [
+          {
+            type: "function",
+            function: {
+              name: "read_file",
+              description: "Read contents of a file",
+              parameters: {
+                type: "object",
+                properties: {
+                  path: { type: "string", description: "File path to read" },
+                },
+                required: ["path"],
+              },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "run_command",
+              description: "Run a shell command",
+              parameters: {
+                type: "object",
+                properties: {
+                  command: { type: "string", description: "Command to execute" },
+                },
+                required: ["command"],
+              },
+            },
+          },
+        ];
+
+        const response = await fetch(
+          `${API_BASE_URL}/api/v1/groq/chat/agent`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: transcript, tools }),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Agent request failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (result.type === "tool_calls" && result.tool_calls) {
+          // Show tool calls as agent steps
+          const steps: AgentStep[] = result.tool_calls.map(
+            (tc: { name: string; arguments: Record<string, unknown> }) => ({
+              tool: tc.name,
+              args: tc.arguments,
+              timestamp: Date.now(),
+            }),
+          );
+          setAgentSteps(steps);
+          setLastAIText("Waiting for tool execution...");
+        } else if (result.type === "final") {
+          setLastAIText(result.response || "Done.");
+
+          // Speak the response if TTS is enabled
+          if (ttsEnabled && result.response) {
+            // Use stream-tts for speaking the agent response
+            const ttsResponse = await fetch(
+              `${API_BASE_URL}/api/v1/groq/chat/stream-tts`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: result.response }),
+              },
+            );
+            if (ttsResponse.ok && ttsResponse.body) {
+              const reader = ttsResponse.body.getReader();
+              const decoder = new TextDecoder();
+              let buf = "";
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const lines = buf.split("\n");
+                buf = lines.pop() || "";
+                let evt = "";
+                for (const line of lines) {
+                  if (line.startsWith("event: ")) evt = line.slice(7).trim();
+                  else if (line.startsWith("data: ") && evt) {
+                    try {
+                      const d = JSON.parse(line.slice(6));
+                      if (evt === "audio" && d.audio) enqueueAudio(d.audio);
+                    } catch { /* ignore */ }
+                    evt = "";
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Agent error:", error);
+        setLastAIText("Agent error occurred.");
+      }
+    },
+    [ttsEnabled, enqueueAudio],
   );
 
   const transcribeAudio = useCallback(
@@ -275,7 +413,10 @@ export default function MainScreen() {
     [],
   );
 
-  const startRecording = useCallback(async () => {
+  // 5-second recording: press mic once → records 5 sec → auto-stops → processes
+  const startRecordingAndProcess = useCallback(async () => {
+    if (recording || processing || speaking) return;
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -290,56 +431,59 @@ export default function MainScreen() {
         }
       };
 
-      mediaRecorder.start();
+      mediaRecorder.onstop = async () => {
+        // Stop mic stream
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setRecording(false);
+        setProcessing(true);
+
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, {
+            type: mediaRecorder.mimeType || "audio/webm",
+          });
+
+          const transcript = await transcribeAudio(audioBlob);
+          if (!transcript || transcript.trim().length === 0) {
+            setProcessing(false);
+            return;
+          }
+
+          // Save user transcript for display
+          setLastUserText(transcript);
+          setLastAIText("");
+          setStreamingAIText("");
+
+          if (agentMode) {
+            await sendAgentMessage(transcript);
+          } else {
+            await streamTTSResponse(transcript);
+          }
+        } catch (error) {
+          console.error("Voice pipeline error:", error);
+        } finally {
+          setProcessing(false);
+        }
+      };
+
+      mediaRecorder.start(100);
       setRecording(true);
+
+      // Auto-stop after 5 seconds
+      setTimeout(() => {
+        if (mediaRecorder.state === "recording") {
+          mediaRecorder.stop();
+        }
+      }, 5000);
     } catch (error) {
       console.error("Failed to access microphone:", error);
     }
-  }, []);
-
-  const stopRecordingAndProcess = useCallback(async () => {
-    const mediaRecorder = mediaRecorderRef.current;
-    if (!mediaRecorder || mediaRecorder.state === "inactive") return;
-
-    // Wait for the recorder to finish
-    const audioBlob = await new Promise<Blob>((resolve) => {
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, {
-          type: mediaRecorder.mimeType || "audio/webm",
-        });
-        resolve(blob);
-      };
-      mediaRecorder.stop();
-    });
-
-    // Stop the mic stream
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    setRecording(false);
-    setProcessing(true);
-
-    try {
-      const transcript = await transcribeAudio(audioBlob);
-      if (!transcript || transcript.trim().length === 0) {
-        setProcessing(false);
-        return;
-      }
-      await streamTTSResponse(transcript);
-    } catch (error) {
-      console.error("Voice pipeline error:", error);
-    } finally {
-      setProcessing(false);
-    }
-  }, [transcribeAudio, streamTTSResponse]);
+  }, [recording, processing, speaking, transcribeAudio, streamTTSResponse, sendAgentMessage, agentMode]);
 
   const handleMicClick = useCallback(() => {
-    if (speaking) return; // Don't interrupt playback
-    if (recording) {
-      stopRecordingAndProcess();
-    } else if (!processing) {
-      startRecording();
-    }
-  }, [speaking, recording, processing, startRecording, stopRecordingAndProcess]);
+    if (speaking || recording || processing) return;
+    startRecordingAndProcess();
+  }, [speaking, recording, processing, startRecordingAndProcess]);
 
   const handleLogout = async () => {
     try {
@@ -378,14 +522,16 @@ export default function MainScreen() {
   };
 
   const buttonLabel = speaking
-    ? "● AGENT SPEAKING"
+    ? "AGENT SPEAKING"
     : recording
-      ? "● LISTENING..."
+      ? "RECORDING (5s)..."
       : processing
-        ? "● PROCESSING..."
-        : "TAP TO ACTIVATE";
+        ? "PROCESSING..."
+        : "TAP TO SPEAK";
 
   const isActive = speaking || recording || processing;
+  const displayAIText = streamingAIText || lastAIText;
+  const hasChat = lastUserText || displayAIText;
 
   return (
     <div className="relative flex flex-col min-h-screen bg-[#030d0d] overflow-hidden font-sans">
@@ -398,6 +544,7 @@ export default function MainScreen() {
         }`}
       />
 
+      {/* Header */}
       <div className="relative z-10 flex items-center justify-between px-[30px] py-[22px]">
         <div className="flex items-center gap-[9px]">
           <div
@@ -409,7 +556,7 @@ export default function MainScreen() {
           />
           <span
             onClick={handleLogout}
-            className="text-[#00e5ff] text-[11px] font-bold tracking-[0.22em] uppercase"
+            className="text-[#00e5ff] text-[11px] font-bold tracking-[0.22em] uppercase cursor-pointer"
           >
             AURIX ACTIVE
           </span>
@@ -417,11 +564,43 @@ export default function MainScreen() {
             Welcome {user?.name}
           </span>
         </div>
-        <button className="w-[46px] h-[46px] rounded-full border border-[#1a4040] bg-[#0a1a1a] flex items-center justify-center cursor-pointer hover:bg-[#0f2626] transition-colors">
-          <UserIcon />
-        </button>
+
+        {/* Control pills + User icon */}
+        <div className="flex items-center gap-2">
+          {/* TTS Toggle */}
+          <button
+            onClick={() => setTtsEnabled(!ttsEnabled)}
+            className={`px-3 py-1.5 rounded-full text-[10px] font-bold tracking-[0.15em] uppercase border transition-all duration-300 ${
+              ttsEnabled
+                ? "border-[#00e5ff] text-[#00e5ff] bg-[#00e5ff10] shadow-[0_0_8px_rgba(0,229,255,0.2)]"
+                : "border-[#1a4040] text-[#1f5555] bg-transparent"
+            }`}
+          >
+            TTS {ttsEnabled ? "ON" : "OFF"}
+          </button>
+
+          {/* Agent Mode Toggle */}
+          <button
+            onClick={() => {
+              setAgentMode(!agentMode);
+              if (!agentMode) setAgentSteps([]);
+            }}
+            className={`px-3 py-1.5 rounded-full text-[10px] font-bold tracking-[0.15em] uppercase border transition-all duration-300 ${
+              agentMode
+                ? "border-[#ff9800] text-[#ff9800] bg-[#ff980010] shadow-[0_0_8px_rgba(255,152,0,0.2)]"
+                : "border-[#1a4040] text-[#1f5555] bg-transparent"
+            }`}
+          >
+            AGENT {agentMode ? "ON" : "OFF"}
+          </button>
+
+          <button className="w-[46px] h-[46px] rounded-full border border-[#1a4040] bg-[#0a1a1a] flex items-center justify-center cursor-pointer hover:bg-[#0f2626] transition-colors">
+            <UserIcon />
+          </button>
+        </div>
       </div>
 
+      {/* Waveform area */}
       <div className="relative flex-1 flex items-center justify-center">
         {[-80, -40, 0, 40, 80].map((offset: number) => (
           <div
@@ -468,6 +647,74 @@ export default function MainScreen() {
         </svg>
       </div>
 
+      {/* Chat Display Panel */}
+      {hasChat && (
+        <div className="relative z-10 mx-6 mb-3">
+          <div className="bg-[#0a1a1a] border border-[#1a4040] rounded-xl px-5 py-4 max-h-[180px] overflow-y-auto">
+            {/* User text */}
+            {lastUserText && (
+              <div className="mb-3">
+                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-[#1f5555]">
+                  YOU
+                </span>
+                <p className="text-[#00e5ff] text-sm mt-1 leading-relaxed">
+                  {lastUserText}
+                </p>
+              </div>
+            )}
+
+            {/* AI response */}
+            {displayAIText && (
+              <div>
+                <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-[#1f5555]">
+                  AI{streamingAIText ? " (streaming...)" : ""}
+                </span>
+                <p className="text-[#7fdbdb] text-sm mt-1 leading-relaxed">
+                  {displayAIText}
+                  {streamingAIText && (
+                    <span className="inline-block w-[2px] h-[14px] bg-[#00e5ff] ml-0.5 animate-pulse align-middle" />
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Agent Steps Panel */}
+      {agentMode && agentSteps.length > 0 && (
+        <div className="relative z-10 mx-6 mb-3">
+          <div className="bg-[#0a1a1a] border border-[#3d2800] rounded-xl px-5 py-4">
+            <span className="text-[10px] font-bold tracking-[0.2em] uppercase text-[#ff9800]">
+              AGENT ACTIONS
+            </span>
+            <div className="mt-2 space-y-2">
+              {agentSteps.map((step, index) => (
+                <div
+                  key={index}
+                  className="flex items-start gap-2 bg-[#1a1200] rounded-lg px-3 py-2"
+                >
+                  <span className="text-[11px] font-bold text-[#ff9800] min-w-[18px]">
+                    {index + 1}.
+                  </span>
+                  <div>
+                    <div className="text-[#ffb74d] text-xs font-semibold">
+                      {step.tool.replace(/_/g, " ")}
+                    </div>
+                    <div className="text-[#7f6830] text-[11px] mt-0.5">
+                      {(step.args as Record<string, string>)?.path ||
+                        (step.args as Record<string, string>)?.command ||
+                        JSON.stringify(step.args).slice(0, 60)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mic button + status */}
       <div className="relative z-10 flex flex-col items-center gap-[14px] pb-[52px]">
         <button
           onClick={handleMicClick}

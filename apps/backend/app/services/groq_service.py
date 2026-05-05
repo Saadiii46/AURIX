@@ -1,196 +1,93 @@
-"""
-Groq Chat Service — full conversation management (moved from Electron)
-Agent mode uses OpenRouter (Nemotron 3) for better coding/tool calling.
-"""
+# pyright: reportMissingImports=false
+
 
 import json
 import logging
 import os
 from dotenv import load_dotenv
-from groq import Groq
 from openai import OpenAI
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
+
+# LangGraphChatManager replaces direct Groq SDK for all chat operations
+from app.services.langgraph_chat import LangGraphChatManager
 
 load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SYSTEM_PROMPT = (
-    "You are a voice assistant. STRICT RULE: Reply in 1-2 sentences ONLY. "
-    "Never exceed 30 words. No lists, no bullet points, no elaboration. "
-    "Be casual and direct like a quick chat with a friend."
-)
-
 AGENT_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
 
 
 class GroqService:
-    """Service for Groq chat completions with conversation history management.
-    Agent mode uses OpenRouter (Nemotron 3) for better tool calling."""
+    """Thin wrapper — chat goes through LangGraph, agent mode still manual.
+    Chat history is fully managed by LangGraphChatManager."""
 
     def __init__(self):
-        self.client = Groq(api_key=os.getenv("GROQ_API_KEY", ""))
-        self.model = "llama-3.1-8b-instant"
-        self.temperature = 0.7
-        self.max_tokens = 80
-        self.max_history_length = 20
+        # all chat + history managed by LangGraph (replaces old self.client = Groq(...))
+        self.chat_manager = LangGraphChatManager(
+            model="llama-3.1-8b-instant",
+            temperature=0.7,
+            max_tokens=80,
+            max_history_length=20,
+        )
 
-        # OpenRouter client for agent mode (Nemotron 3)
+        # agent mode still uses OpenRouter directly (will migrate to LangGraph later)
         self.agent_client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=os.getenv("OPENROUTER_API_KEY", ""),
         )
         self.agent_model = AGENT_MODEL
 
-        # Conversation history
-        self.conversation_history: List[Dict[str, Any]] = [
-            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT}
-        ]
-
-        # Agent state: pending tool calls waiting for results
+        # agent state — tracks pending tool calls between request/response cycles
         self._pending_agent_messages: List[Dict[str, Any]] = []
         self._pending_tools: List[Dict[str, Any]] = []
 
-    # ── Chat ────────────────────────────────────────────────
+    # -- Chat — delegated to LangGraph --------------------------------
 
     def send_message(self, user_message: str) -> dict:
-        """Send a user message, manage history, return assistant response."""
-        logger.info("User message: %s", user_message)
-        logger.info("Current history length: %d", len(self.conversation_history))
-
-        # Add user message
-        self.conversation_history.append({"role": "user", "content": user_message})
-        self._trim_history()
-
-        # Prepare messages for API (strip extra fields)
-        messages = [
-            {"role": m["role"], "content": m["content"]}
-            for m in self.conversation_history
-        ]
-
-        try:
-            logger.info("Sending to Groq: %s, messages: %d", self.model, len(messages))
-
-            response = self.client.chat.completions.create(
-                messages=messages,
-                model=self.model,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-
-            assistant_content = (
-                response.choices[0].message.content
-                or "I apologize, but I could not generate a response."
-            )
-
-            # Add to history
-            self.conversation_history.append(
-                {"role": "assistant", "content": assistant_content}
-            )
-
-            logger.info("Assistant response: %s", assistant_content)
-
-            return {
-                "message": assistant_content,
-                "role": "assistant",
-                "usage": {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                },
-            }
-
-        except Exception as e:
-            # Handle context_length_exceeded by clearing history and retrying
-            if "context_length_exceeded" in str(e):
-                logger.warning("Context length exceeded, clearing history and retrying")
-                self.clear_history()
-                return self.send_message(user_message)
-
-            status = getattr(e, "status_code", None) or getattr(e, "status", None)
-            if status == 401:
-                raise Exception("Invalid Groq API key. Please check your configuration.")
-            elif status == 429:
-                raise Exception("Groq API rate limit exceeded. Please try again in a moment.")
-            elif status == 400:
-                raise Exception(f"Invalid request: {str(e)}")
-
-            raise Exception(f"Chat error: {str(e)}")
+        """Send message via LangGraph chat graph. Returns full response."""
+        return self.chat_manager.send_message(user_message)
 
     def send_message_stream(self, user_message: str):
-        """Stream tokens from Groq. Yields token strings as they arrive.
-        After the stream ends, the full response is added to conversation history."""
-        logger.info("User message (stream): %s", user_message)
+        """Stream tokens via LangGraph. Used by /chat/stream-tts endpoint."""
+        yield from self.chat_manager.send_message_stream(user_message)
 
-        self.conversation_history.append({"role": "user", "content": user_message})
-        self._trim_history()
+    # -- History — delegated to LangGraph -----------------------------
 
-        messages = [
-            {"role": m["role"], "content": m["content"]}
-            for m in self.conversation_history
-        ]
+    def clear_history(self) -> None:
+        """Clear chat history + reset agent state."""
+        self.chat_manager.clear_history()
+        self._pending_agent_messages = []
+        self._pending_tools = []
 
-        try:
-            stream = self.client.chat.completions.create(
-                messages=messages,
-                model=self.model,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                stream=True,
-            )
+    def get_history(self) -> List[Dict[str, Any]]:
+        """Get history as dicts. chat_manager converts from LangChain messages."""
+        return self.chat_manager.get_history()
 
-            full_response = ""
-            for chunk in stream:
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    full_response += delta.content
-                    yield delta.content
+    def set_system_prompt(self, prompt: str) -> None:
+        """Set system prompt in LangGraph state."""
+        self.chat_manager.set_system_prompt(prompt)
 
-            if not full_response:
-                full_response = "I apologize, but I could not generate a response."
+    def get_config(self) -> dict:
+        """Get model config from LangGraph chat manager."""
+        return self.chat_manager.get_config()
 
-            self.conversation_history.append(
-                {"role": "assistant", "content": full_response}
-            )
-            logger.info("Streaming response complete, length: %d", len(full_response))
-
-        except Exception as e:
-            if "context_length_exceeded" in str(e):
-                logger.warning("Context length exceeded during stream, clearing history")
-                self.clear_history()
-                self.conversation_history.append({"role": "user", "content": user_message})
-                self._trim_history()
-                yield from self.send_message_stream(user_message)
-                return
-
-            raise Exception(f"Chat stream error: {str(e)}")
-
-    # ── Agent mode ──────────────────────────────────────────
+    # -- Agent mode — NOT migrated, still manual loop -----------------
 
     def send_agent_message(
         self, user_message: str, tools: List[Dict[str, Any]]
     ) -> dict:
-        """
-        Start an agent turn. Returns either a final text response or
-        pending tool calls that the client must execute.
-        """
-        # Add user message
-        self.conversation_history.append({"role": "user", "content": user_message})
-        self._trim_history()
+        """Start agent turn. Returns final response or tool calls for frontend."""
+        history = self.chat_manager.get_history()
+        history.append({"role": "user", "content": user_message})
 
-        # Build messages
-        messages = self._build_agent_messages()
-
+        messages = self._build_agent_messages(history)
         self._pending_tools = tools
         return self._agent_completion(messages, tools)
 
     def submit_tool_results(self, tool_results: List[Dict[str, Any]]) -> dict:
-        """
-        Submit tool execution results and continue the agent loop.
-        Each item: { tool_call_id: str, result: Any }
-        """
-        # Append tool results to pending messages
+        """Frontend sends tool results back, agent loop continues."""
         for tr in tool_results:
             self._pending_agent_messages.append(
                 {
@@ -200,13 +97,14 @@ class GroqService:
                 }
             )
 
-        messages = self._build_agent_messages()
+        history = self.chat_manager.get_history()
+        messages = self._build_agent_messages(history)
         return self._agent_completion(messages, self._pending_tools)
 
     def _agent_completion(
         self, messages: List[Dict[str, Any]], tools: List[Dict[str, Any]]
     ) -> dict:
-        """Run one agent completion step using OpenRouter (Nemotron 3)."""
+        """Agent loop — call LLM, check for tool calls, repeat. Max 10 iterations."""
         for iteration in range(10):
             logger.info(
                 "Agent loop iteration %d, messages: %d (model: %s)",
@@ -220,10 +118,9 @@ class GroqService:
                     tools=tools,
                     tool_choice="auto",
                     temperature=0.3,
-                    max_tokens=self.max_tokens,
+                    max_tokens=80,
                 )
             except Exception as err:
-                # tool_use_failed — retry without tools
                 err_msg = str(err)
                 if "tool_use_failed" in err_msg:
                     logger.warning("Tool call failed, retrying without tools...")
@@ -231,14 +128,11 @@ class GroqService:
                         model=self.agent_model,
                         messages=messages,
                         temperature=0.3,
-                        max_tokens=self.max_tokens,
+                        max_tokens=80,
                     )
                     fallback_response = (
                         fallback.choices[0].message.content
                         or "Sorry, I had trouble executing that command."
-                    )
-                    self.conversation_history.append(
-                        {"role": "assistant", "content": fallback_response}
                     )
                     self._pending_agent_messages = []
                     self._pending_tools = []
@@ -248,18 +142,14 @@ class GroqService:
             choice = completion.choices[0]
             assistant_msg = choice.message
 
-            # No tool calls → final response
+            # no tool calls = final answer
             if not assistant_msg.tool_calls:
                 response_text = assistant_msg.content or "Done."
-                self.conversation_history.append(
-                    {"role": "assistant", "content": response_text}
-                )
                 self._pending_agent_messages = []
                 self._pending_tools = []
                 return {"type": "final", "response": response_text}
 
-            # Has tool calls → return them to client for execution
-            # Store assistant message with tool_calls in pending
+            # has tool calls — store and return to frontend for execution
             assistant_entry = {
                 "role": "assistant",
                 "content": assistant_msg.content or "",
@@ -277,7 +167,6 @@ class GroqService:
             }
             self._pending_agent_messages.append(assistant_entry)
 
-            # Return pending tool calls to client
             tool_calls_data = []
             for tc in assistant_msg.tool_calls:
                 try:
@@ -294,17 +183,15 @@ class GroqService:
 
             return {"type": "tool_calls", "tool_calls": tool_calls_data}
 
-        # Max iterations reached
-        fallback = "Agent reached maximum iterations."
-        self.conversation_history.append({"role": "assistant", "content": fallback})
+        # safety net — stop after 10 iterations
         self._pending_agent_messages = []
         self._pending_tools = []
-        return {"type": "final", "response": fallback}
+        return {"type": "final", "response": "Agent reached maximum iterations."}
 
-    def _build_agent_messages(self) -> List[Dict[str, Any]]:
-        """Build full message list for agent: history + pending agent messages."""
+    def _build_agent_messages(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Combine chat history + pending agent messages for next LLM call."""
         messages = []
-        for m in self.conversation_history:
+        for m in history:
             entry: Dict[str, Any] = {"role": m["role"], "content": m["content"]}
             if "tool_calls" in m:
                 entry["tool_calls"] = m["tool_calls"]
@@ -312,65 +199,5 @@ class GroqService:
                 entry["tool_call_id"] = m["tool_call_id"]
             messages.append(entry)
 
-        # Add pending agent messages (assistant tool_calls + tool results)
         messages.extend(self._pending_agent_messages)
         return messages
-
-    # ── History management ──────────────────────────────────
-
-    def clear_history(self) -> None:
-        """Clear conversation history, keep system prompt."""
-        system_msg = next(
-            (m for m in self.conversation_history if m["role"] == "system"), None
-        )
-        self.conversation_history = [system_msg] if system_msg else []
-        self._pending_agent_messages = []
-        self._pending_tools = []
-        logger.info("Conversation history cleared")
-
-    def get_history(self) -> List[Dict[str, Any]]:
-        """Return conversation history."""
-        return self.conversation_history
-
-    def set_system_prompt(self, prompt: str) -> None:
-        """Set/replace system prompt."""
-        idx = next(
-            (
-                i
-                for i, m in enumerate(self.conversation_history)
-                if m["role"] == "system"
-            ),
-            None,
-        )
-        if idx is not None:
-            self.conversation_history[idx] = {"role": "system", "content": prompt}
-        else:
-            self.conversation_history.insert(0, {"role": "system", "content": prompt})
-        logger.info("System prompt updated")
-
-    def get_config(self) -> dict:
-        """Return current config."""
-        system_prompt = next(
-            (m["content"] for m in self.conversation_history if m["role"] == "system"),
-            DEFAULT_SYSTEM_PROMPT,
-        )
-        return {
-            "model": self.model,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "max_history_length": self.max_history_length,
-            "system_prompt": system_prompt,
-        }
-
-    # ── Helpers ─────────────────────────────────────────────
-
-    def _trim_history(self) -> None:
-        """Trim history to max_history_length, keeping system prompt."""
-        if len(self.conversation_history) <= self.max_history_length:
-            return
-
-        system_msg = self.conversation_history[0]
-        recent = self.conversation_history[-(self.max_history_length - 1) :]
-        self.conversation_history = [system_msg] + recent
-        logger.info("History trimmed to %d messages", len(self.conversation_history))
-
