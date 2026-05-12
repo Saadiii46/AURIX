@@ -1,39 +1,35 @@
 # pyright: reportMissingImports=false
 
 """
-LangGraph Chat Manager — replaces direct Groq SDK for chat operations.
-Uses a StateGraph with a single chat node. Extensible for RAG, memory, guardrails.
+LangGraph Chat Manager — uses StateGraph with built-in checkpointer memory.
+Replaces manual array-based history with LangGraph's MemorySaver.
 """
 
 import logging
 from typing import List, Dict, Any
 
-# LangGraph — graph builder for creating node-based workflows
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.checkpoint.memory import MemorySaver
 
-# ChatGroq — LangChain wrapper around Groq SDK, used instead of raw Groq client
 from langchain_groq import ChatGroq
-
-# LangChain message types — history is stored as these objects, not plain dicts
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from app.core.config import GROQ_API_KEY
 
 logger = logging.getLogger(__name__)
 
-# default system prompt — same as before, moved here from groq_service.py
 DEFAULT_SYSTEM_PROMPT = (
     "You are a voice assistant. STRICT RULE: Reply in 1-2 sentences ONLY. "
     "Never exceed 30 words. No lists, no bullet points, no elaboration. "
     "Be casual and direct like a quick chat with a friend."
 )
 
-# max messages to keep in history (including system prompt)
 MAX_HISTORY_LENGTH = 20
+DEFAULT_THREAD_ID = "default"
 
 
 class LangGraphChatManager:
-    """Owns the chat graph, LLM instances, and conversation history.
+    """Owns the chat graph with checkpointer-based memory.
     GroqService delegates all chat + history calls here."""
 
     def __init__(
@@ -47,13 +43,8 @@ class LangGraphChatManager:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.max_history_length = max_history_length
+        self.system_prompt = DEFAULT_SYSTEM_PROMPT
 
-        # conversation history — stored as LangChain message objects
-        self.messages: List[BaseMessage] = [
-            SystemMessage(content=DEFAULT_SYSTEM_PROMPT)
-        ]
-
-        # LLM for raw (non-streaming) responses — used by chat graph
         self._llm = ChatGroq(
             api_key=GROQ_API_KEY,
             model=model,
@@ -61,7 +52,6 @@ class LangGraphChatManager:
             max_tokens=max_tokens,
         )
 
-        # LLM for streaming — yields tokens one by one, used by TTS pipeline
         self._stream_llm = ChatGroq(
             api_key=GROQ_API_KEY,
             model=model,
@@ -70,58 +60,58 @@ class LangGraphChatManager:
             streaming=True,
         )
 
-        # compile the chat graph once at init
+        self._checkpointer = MemorySaver()
         self.chat_graph = self._build_chat_graph()
 
+    def _thread_config(self, thread_id: str = DEFAULT_THREAD_ID) -> dict:
+        return {"configurable": {"thread_id": thread_id}}
+
     def _build_chat_graph(self):
-        """Build a simple graph: START -> chat_node -> END.
-        Only 1 node now, but can be extended later with RAG, memory, guardrails."""
+        """Build graph: START -> chat_node -> END with checkpointer memory."""
         llm = self._llm
+        manager = self
 
-        def chat_node(state: dict) -> dict:
-            """Takes messages from state, calls LLM, returns response."""
+        def chat_node(state: MessagesState) -> dict:
             messages = state["messages"]
+            # prepend system prompt if not already present
+            if not messages or not isinstance(messages[0], SystemMessage):
+                messages = [SystemMessage(content=manager.system_prompt)] + list(messages)
+            # trim to max history length
+            if len(messages) > manager.max_history_length:
+                messages = [messages[0]] + messages[-(manager.max_history_length - 1):]
             result = llm.invoke(messages)
-            return {
-                "messages": messages + [result],
-                "response": result.content,
-            }
+            return {"messages": [result]}
 
-        graph = StateGraph(dict)
-        graph.add_node("chat", chat_node)  # single node — LLM call
-        graph.add_edge(START, "chat")       # entry point
-        graph.add_edge("chat", END)         # exit point
+        graph = StateGraph(MessagesState)
+        graph.add_node("chat", chat_node)
+        graph.add_edge(START, "chat")
+        graph.add_edge("chat", END)
 
-        return graph.compile()
+        return graph.compile(checkpointer=self._checkpointer)
 
     # -- Chat --------------------------------------------------------
 
-    def send_message(self, user_message: str) -> dict:
-        """Add user message to history, run graph, return AI response.
-        Returns same dict format as old groq_service so endpoints don't break."""
+    def send_message(self, user_message: str, thread_id: str = DEFAULT_THREAD_ID) -> dict:
+        """Add user message, run graph, return AI response."""
         logger.info("User message: %s", user_message)
-        logger.info("Current history length: %d", len(self.messages))
-
-        # add user message as LangChain HumanMessage
-        self.messages.append(HumanMessage(content=user_message))
-        self._trim_history()
+        config = self._thread_config(thread_id)
 
         try:
-            logger.info("Sending to LangGraph chat: %s, messages: %d", self.model, len(self.messages))
-
-            # invoke the graph — passes messages through chat_node
-            result = self.chat_graph.invoke({"messages": self.messages, "response": ""})
-
-            assistant_content = (
-                result.get("response")
-                or "I apologize, but I could not generate a response."
+            result = self.chat_graph.invoke(
+                {"messages": [HumanMessage(content=user_message)]},
+                config=config,
             )
 
-            # add AI response to history
-            self.messages.append(AIMessage(content=assistant_content))
+            # last message in state is the AI response
+            ai_message = result["messages"][-1]
+            assistant_content = (
+                ai_message.content
+                if isinstance(ai_message, AIMessage)
+                else "I apologize, but I could not generate a response."
+            )
+
             logger.info("Assistant response: %s", assistant_content)
 
-            # usage is None — LangGraph doesn't expose token counts same way
             return {
                 "message": assistant_content,
                 "role": "assistant",
@@ -129,11 +119,10 @@ class LangGraphChatManager:
             }
 
         except Exception as e:
-            # if context too long, clear history and retry with just this message
             if "context_length_exceeded" in str(e):
                 logger.warning("Context length exceeded, clearing history and retrying")
-                self.clear_history()
-                return self.send_message(user_message)
+                self.clear_history(thread_id)
+                return self.send_message(user_message, thread_id)
 
             status = getattr(e, "status_code", None) or getattr(e, "status", None)
             if status == 401:
@@ -145,18 +134,29 @@ class LangGraphChatManager:
 
             raise Exception(f"Chat error: {str(e)}")
 
-    def send_message_stream(self, user_message: str):
-        """Stream tokens one by one. TTS pipeline needs this to generate
-        audio per sentence as tokens arrive."""
+    def send_message_stream(self, user_message: str, thread_id: str = DEFAULT_THREAD_ID):
+        """Stream tokens one by one. Reads/writes history through checkpointer."""
         logger.info("User message (stream): %s", user_message)
+        config = self._thread_config(thread_id)
 
-        self.messages.append(HumanMessage(content=user_message))
-        self._trim_history()
+        # get current history from checkpointer
+        state = self.chat_graph.get_state(config)
+        messages = list(state.values.get("messages", [])) if state.values else []
+
+        # prepend system prompt if needed
+        if not messages or not isinstance(messages[0], SystemMessage):
+            messages = [SystemMessage(content=self.system_prompt)] + messages
+
+        # add user message
+        messages.append(HumanMessage(content=user_message))
+
+        # trim
+        if len(messages) > self.max_history_length:
+            messages = [messages[0]] + messages[-(self.max_history_length - 1):]
 
         try:
             full_response = ""
-            # stream() yields AIMessageChunk objects with .content
-            for chunk in self._stream_llm.stream(self.messages):
+            for chunk in self._stream_llm.stream(messages):
                 if chunk.content:
                     full_response += chunk.content
                     yield chunk.content
@@ -164,81 +164,68 @@ class LangGraphChatManager:
             if not full_response:
                 full_response = "I apologize, but I could not generate a response."
 
-            # after stream ends, save full response to history
-            self.messages.append(AIMessage(content=full_response))
+            # save updated history (user + assistant) through the graph
+            # update_state adds messages to the checkpointed state
+            self.chat_graph.update_state(
+                config,
+                {"messages": [
+                    HumanMessage(content=user_message),
+                    AIMessage(content=full_response),
+                ]},
+            )
             logger.info("Streaming response complete, length: %d", len(full_response))
 
         except Exception as e:
             if "context_length_exceeded" in str(e):
                 logger.warning("Context length exceeded during stream, clearing history")
-                self.clear_history()
-                self.messages.append(HumanMessage(content=user_message))
-                yield from self.send_message_stream(user_message)
+                self.clear_history(thread_id)
+                yield from self.send_message_stream(user_message, thread_id)
                 return
 
             raise Exception(f"Chat stream error: {str(e)}")
 
     # -- History Management ------------------------------------------
 
-    def clear_history(self) -> None:
-        """Reset messages list, keep only system prompt."""
-        system_msg = next(
-            (m for m in self.messages if isinstance(m, SystemMessage)), None
+    def clear_history(self, thread_id: str = DEFAULT_THREAD_ID) -> None:
+        """Clear conversation by updating state with empty messages."""
+        config = self._thread_config(thread_id)
+        # overwrite state with just the system prompt
+        self.chat_graph.update_state(
+            config,
+            {"messages": []},
         )
-        self.messages = [system_msg] if system_msg else []
-        logger.info("Conversation history cleared")
+        logger.info("Conversation history cleared for thread: %s", thread_id)
 
-    def get_history(self) -> List[Dict[str, Any]]:
-        """Convert LangChain messages back to dicts for API responses.
-        Endpoints expect [{"role": "user", "content": "..."}] format."""
-        return [
-            {"role": self._msg_role(m), "content": m.content}
-            for m in self.messages
-        ]
+    def get_history(self, thread_id: str = DEFAULT_THREAD_ID) -> List[Dict[str, Any]]:
+        """Read messages from checkpointer and convert to dicts for API responses."""
+        config = self._thread_config(thread_id)
+        state = self.chat_graph.get_state(config)
+        messages = state.values.get("messages", []) if state.values else []
+
+        result = []
+        for m in messages:
+            if isinstance(m, SystemMessage):
+                role = "system"
+            elif isinstance(m, HumanMessage):
+                role = "user"
+            elif isinstance(m, AIMessage):
+                role = "assistant"
+            else:
+                role = "unknown"
+            result.append({"role": role, "content": m.content})
+        return result
 
     def set_system_prompt(self, prompt: str) -> None:
-        """Find SystemMessage in list and replace it. If none exists, insert at start."""
-        for i, m in enumerate(self.messages):
-            if isinstance(m, SystemMessage):
-                self.messages[i] = SystemMessage(content=prompt)
-                logger.info("System prompt updated")
-                return
-        self.messages.insert(0, SystemMessage(content=prompt))
-        logger.info("System prompt set")
+        """Update the system prompt used for future messages."""
+        self.system_prompt = prompt
+        logger.info("System prompt updated")
 
     def get_config(self) -> dict:
         """Return current model config and system prompt."""
-        system_prompt = next(
-            (m.content for m in self.messages if isinstance(m, SystemMessage)),
-            DEFAULT_SYSTEM_PROMPT,
-        )
         return {
             "model": self.model,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "max_history_length": self.max_history_length,
-            "system_prompt": system_prompt,
+            "system_prompt": self.system_prompt,
         }
-
-    # -- Helpers -----------------------------------------------------
-
-    def _trim_history(self) -> None:
-        """Keep system prompt (first msg) + last (max-1) messages. Discard old ones."""
-        if len(self.messages) <= self.max_history_length:
-            return
-
-        system_msg = self.messages[0] if isinstance(self.messages[0], SystemMessage) else None
-        recent = self.messages[-(self.max_history_length - 1):]
-        self.messages = ([system_msg] if system_msg else []) + recent
-        logger.info("History trimmed to %d messages", len(self.messages))
-
-    @staticmethod
-    def _msg_role(msg: BaseMessage) -> str:
-        """Convert LangChain message type to role string for API dicts."""
-        if isinstance(msg, SystemMessage):
-            return "system"
-        elif isinstance(msg, HumanMessage):
-            return "user"
-        elif isinstance(msg, AIMessage):
-            return "assistant"
-        return "unknown"

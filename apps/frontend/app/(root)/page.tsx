@@ -288,44 +288,12 @@ export default function MainScreen() {
       setAgentSteps([]);
 
       try {
-        // Default tools for agent mode
-        const tools = [
-          {
-            type: "function",
-            function: {
-              name: "read_file",
-              description: "Read contents of a file",
-              parameters: {
-                type: "object",
-                properties: {
-                  path: { type: "string", description: "File path to read" },
-                },
-                required: ["path"],
-              },
-            },
-          },
-          {
-            type: "function",
-            function: {
-              name: "run_command",
-              description: "Run a shell command",
-              parameters: {
-                type: "object",
-                properties: {
-                  command: { type: "string", description: "Command to execute" },
-                },
-                required: ["command"],
-              },
-            },
-          },
-        ];
-
         const response = await fetch(
           `${API_BASE_URL}/api/v1/groq/chat/agent`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: transcript, tools }),
+            body: JSON.stringify({ message: transcript }),
           },
         );
 
@@ -333,53 +301,75 @@ export default function MainScreen() {
           throw new Error(`Agent request failed: ${response.status}`);
         }
 
-        const result = await response.json();
+        if (!response.body) {
+          throw new Error("No response body");
+        }
 
-        if (result.type === "tool_calls" && result.tool_calls) {
-          // Show tool calls as agent steps
-          const steps: AgentStep[] = result.tool_calls.map(
-            (tc: { name: string; arguments: Record<string, unknown> }) => ({
-              tool: tc.name,
-              args: tc.arguments,
-              timestamp: Date.now(),
-            }),
+        // Consume SSE stream from agent
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let finalText = "";
+        let evt = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              evt = line.slice(7).trim();
+            } else if (line.startsWith("data: ") && evt) {
+              try {
+                const d = JSON.parse(line.slice(6));
+                if (evt === "step") {
+                  setAgentSteps((prev) => [
+                    ...prev,
+                    { tool: d.tool, args: d.args, timestamp: Date.now() },
+                  ]);
+                } else if (evt === "text") {
+                  finalText = d.text;
+                  setLastAIText(d.text);
+                } else if (evt === "error") {
+                  setLastAIText(`Error: ${d.error}`);
+                }
+              } catch { /* ignore parse errors */ }
+              evt = "";
+            }
+          }
+        }
+
+        // Speak the final response if TTS is enabled (TTS-only, no LLM re-processing)
+        if (ttsEnabled && finalText) {
+          const ttsResponse = await fetch(
+            `${API_BASE_URL}/api/v1/groq/chat/tts-only`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ message: finalText }),
+            },
           );
-          setAgentSteps(steps);
-          setLastAIText("Waiting for tool execution...");
-        } else if (result.type === "final") {
-          setLastAIText(result.response || "Done.");
-
-          // Speak the response if TTS is enabled
-          if (ttsEnabled && result.response) {
-            // Use stream-tts for speaking the agent response
-            const ttsResponse = await fetch(
-              `${API_BASE_URL}/api/v1/groq/chat/stream-tts`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: result.response }),
-              },
-            );
-            if (ttsResponse.ok && ttsResponse.body) {
-              const reader = ttsResponse.body.getReader();
-              const decoder = new TextDecoder();
-              let buf = "";
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buf += decoder.decode(value, { stream: true });
-                const lines = buf.split("\n");
-                buf = lines.pop() || "";
-                let evt = "";
-                for (const line of lines) {
-                  if (line.startsWith("event: ")) evt = line.slice(7).trim();
-                  else if (line.startsWith("data: ") && evt) {
-                    try {
-                      const d = JSON.parse(line.slice(6));
-                      if (evt === "audio" && d.audio) enqueueAudio(d.audio);
-                    } catch { /* ignore */ }
-                    evt = "";
-                  }
+          if (ttsResponse.ok && ttsResponse.body) {
+            const ttsReader = ttsResponse.body.getReader();
+            const ttsDecoder = new TextDecoder();
+            let ttsBuf = "";
+            let ttsEvt = "";
+            while (true) {
+              const { done, value } = await ttsReader.read();
+              if (done) break;
+              ttsBuf += ttsDecoder.decode(value, { stream: true });
+              const ttsLines = ttsBuf.split("\n");
+              ttsBuf = ttsLines.pop() || "";
+              for (const line of ttsLines) {
+                if (line.startsWith("event: ")) ttsEvt = line.slice(7).trim();
+                else if (line.startsWith("data: ") && ttsEvt) {
+                  try {
+                    const d = JSON.parse(line.slice(6));
+                    if (ttsEvt === "audio" && d.audio) enqueueAudio(d.audio);
+                  } catch { /* ignore */ }
+                  ttsEvt = "";
                 }
               }
             }

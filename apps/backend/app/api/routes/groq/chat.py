@@ -1,7 +1,7 @@
 # pyright: reportMissingImports=false
 
 """
-Groq Chat Endpoints — backend-managed conversation history & agent mode
+Groq Chat Endpoints — backend-managed conversation history & LangGraph agent mode
 """
 
 import json
@@ -14,12 +14,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from app.services.groq_service import GroqService
+from app.services.langgraph_agent import LangGraphAgentManager
 from app.services.inworld_tts_service import InWorldTTSService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/groq", tags=["groq"])
 groq_service = GroqService()
+agent_manager = LangGraphAgentManager()
 inworld_tts = InWorldTTSService()
 
 
@@ -35,16 +37,8 @@ class StreamTTSRequest(BaseModel):
 class SystemPromptRequest(BaseModel):
     prompt: str
 
-class AgentRequest(BaseModel):
+class AgentStreamRequest(BaseModel):
     message: str
-    tools: List[Dict[str, Any]]
-
-class AgentToolResult(BaseModel):
-    tool_call_id: str
-    result: Any
-
-class AgentToolResultsRequest(BaseModel):
-    tool_results: List[AgentToolResult]
 
 
 # ── Sentence splitting helper ──────────────────────────────
@@ -95,7 +89,6 @@ async def chat_stream_tts(request: StreamTTSRequest):
     def generate():
         sentence_buffer = ""
         voice = request.voice
-        # Reuse single event loop for all TTS calls (avoid overhead of creating new loops)
         loop = asyncio.new_event_loop()
 
         try:
@@ -147,31 +140,69 @@ async def chat_stream_tts(request: StreamTTSRequest):
 
 
 @router.post("/chat/agent")
-async def agent_chat(request: AgentRequest):
-    try:
-        result = groq_service.send_agent_message(request.message, request.tools)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def agent_chat(request: AgentStreamRequest):
+    """Stream agent execution as SSE. Tools run server-side."""
+    return StreamingResponse(
+        agent_manager.stream_agent(request.message),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
-@router.post("/chat/agent/tool-results")
-async def agent_tool_results(request: AgentToolResultsRequest):
-    try:
-        tool_results = [
-            {"tool_call_id": tr.tool_call_id, "result": tr.result}
-            for tr in request.tool_results
-        ]
-        result = groq_service.submit_tool_results(tool_results)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.post("/chat/tts-only")
+async def tts_only(request: StreamTTSRequest):
+    """Convert pre-existing text to TTS audio via SSE — no LLM call.
+    Used by agent mode to speak the final response."""
+    import asyncio
+
+    def generate():
+        text = request.message
+        voice = request.voice
+        loop = asyncio.new_event_loop()
+
+        try:
+            # Split text into smaller chunks for smoother audio
+            sentences = _SENTENCE_END_RE.split(text)
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                try:
+                    audio_bytes = loop.run_until_complete(
+                        inworld_tts.text_to_speech(text=sentence, voice=voice)
+                    )
+                    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                    yield f"event: audio\ndata: {json.dumps({'audio': audio_b64})}\n\n"
+                except Exception as tts_err:
+                    logger.error("TTS-only error for chunk: %s", tts_err)
+        except Exception as e:
+            logger.error("TTS-only stream error: %s", e)
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            loop.close()
+
+        yield "event: done\ndata: {}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.delete("/chat/history")
 async def clear_history():
     try:
         groq_service.clear_history()
+        agent_manager.clear_history()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
